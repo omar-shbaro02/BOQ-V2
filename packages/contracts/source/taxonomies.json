@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0.0",
+  "taxonomies": {
+    "SemanticState": [
+      "BASELINE",
+      "CURRENT_AUTHORIZED",
+      "ACTUAL",
+      "REPORTED",
+      "VERIFIED",
+      "FORECAST",
+      "PROPOSED",
+      "SCENARIO",
+      "SUPERSEDED"
+    ],
+    "TruthType": [
+      "VERIFIED_FACT",
+      "CORROBORATED_FACT",
+      "REPORTED_CLAIM",
+      "DERIVED_METRIC",
+      "ASSUMPTION",
+      "UNKNOWN",
+      "CONTRADICTED",
+      "JUDGMENT",
+      "SCENARIO_ESTIMATE"
+    ],
+    "Disposition": ["NO_ACTION", "MONITOR", "VERIFY", "INTERVENE", "ESCALATE"],
+    "DecisionReadiness": [
+      "DECISION_READY",
+      "DECISION_READY_WITH_LIMITATIONS",
+      "VERIFICATION_REQUIRED",
+      "INSUFFICIENT"
+    ],
+    "CaseLifecycle": [
+      "OPEN",
+      "EVIDENCE_ASSEMBLY",
+      "ANALYSIS",
+      "REVIEW",
+      "DECISION_READY",
+      "HUMAN_DISPOSITION",
+      "RESPONSE_ESCALATION",
+      "OUTCOME_MONITORING",
+      "CLOSED",
+      "BLOCKED",
+      "REOPENED"
+    ],
+    "GovernanceState": [
+      "ANALYSIS_AUTHORIZED",
+      "VERIFICATION_REQUIRED",
+      "HUMAN_REVIEW_REQUIRED",
+      "APPROVAL_REQUIRED",
+      "ESCALATION_REQUIRED",
+      "GOVERNANCE_BLOCKED",
+      "AUTHORIZED_TO_PROCEED"
+    ],
+    "AutonomyClass": [
+      "A0_OBSERVATION_READ_ONLY",
+      "A1_ANALYTICAL_AUTONOMY",
+      "A2_ADVISORY_AUTONOMY",
+      "A3_CONTROLLED_EXECUTION",
+      "A4_HUMAN_RESERVED"
+    ],
+    "ControlledObjectType": [
+      "PROJECT",
+      "AREA",
+      "WORK_PACKAGE",
+      "ACTIVITY",
+      "MILESTONE",
+      "BOQ_ITEM",
+      "APPROVAL",
+      "PROCUREMENT_ITEM",
+      "CHANGE",
+      "RISK",
+      "RESOURCE"
+    ],
+    "ProgressBasis": [
+      "PHYSICAL_EXECUTED",
+      "PHYSICAL_VERIFIED",
+      "ACCEPTED_RELEASED",
+      "DURATION_ELAPSED",
+      "WEIGHTED_MILESTONE",
+      "BOQ_VALUE_EARNED",
+      "REPORTED_PERCENT_COMPLETE"
+    ],
+    "UrgencyLevel": ["NONE", "ROUTINE", "ELEVATED", "URGENT", "IMMEDIATE"],
+    "SpecialistKind": [
+      "EVIDENCE_PROGRESS",
+      "SCHEDULE_DEPENDENCY",
+      "COST_COMMERCIAL",
+      "FORECAST_SCENARIO",
+      "IMPACT_PRIORITY"
+    ],
+    "ProjectRole": [
+      "ORGANIZATION_ADMIN",
+      "PROJECT_ADMIN",
+      "DATA_CONTRIBUTOR",
+      "VERIFIER",
+      "ANALYST_CONTROLLER",
+      "DECISION_OWNER",
+      "APPROVER_ESCALATION_AUTHORITY",
+      "AUDITOR_READ_ONLY"
+    ],
+    "ControlledObjectRelationType": [
+      "CONTAINS",
+      "DEPENDS_ON",
+      "RESPONSIBLE_FOR",
+      "AFFECTS",
+      "CROSS_CUTTING"
+    ],
+    "AuthorizedContextType": ["SCHEDULE", "BUDGET", "BOQ"],
+    "ProjectStatus": ["DRAFT", "ACTIVE", "ARCHIVED"],
+    "EvidenceItemStatus": ["ACTIVE", "SUPERSEDED"],
+    "EvidenceRelationType": ["SUPPORTS", "CONTRADICTS", "DERIVED_FROM"],
+    "VerificationOutcome": ["VERIFIED", "REJECTED", "PARTIALLY_VERIFIED", "UNABLE"],
+    "ContradictionStatus": ["OPEN", "RESOLVED"],
+    "EvidenceRequestStatus": ["OPEN", "SATISFIED", "CANCELLED"],
+    "ImportBatchStatus": ["PREVIEW", "COMMITTED", "REJECTED"],
+    "DataClassification": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+  }
+}

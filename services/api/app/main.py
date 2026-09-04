@@ -1,0 +1,68 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import get_settings
+from app.generated import taxonomies
+from app.routers.control_context import router as control_context_router
+from app.routers.evidence import router as evidence_router
+
+settings = get_settings()
+app = FastAPI(
+    title="VAI Project Control Decision Intelligence API",
+    version="0.1.0",
+    description="Governed decision support. Recommendations never constitute human decisions.",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=[
+        "Content-Type",
+        "Idempotency-Key",
+        "X-VAI-Actor-ID",
+        "X-VAI-Organization-ID",
+        "X-VAI-Roles",
+    ],
+)
+app.include_router(control_context_router)
+app.include_router(evidence_router)
+
+
+@app.get("/health", tags=["operations"])
+def health() -> dict[str, str]:
+    return {"status": "ok", "environment": settings.environment}
+
+
+@app.get("/api/v1/meta/taxonomies", tags=["metadata"])
+def get_taxonomies() -> dict[str, object]:
+    names = (
+        "SemanticState",
+        "TruthType",
+        "Disposition",
+        "DecisionReadiness",
+        "CaseLifecycle",
+        "GovernanceState",
+        "AutonomyClass",
+        "ControlledObjectType",
+        "ProgressBasis",
+        "UrgencyLevel",
+        "SpecialistKind",
+        "ProjectRole",
+        "ControlledObjectRelationType",
+        "AuthorizedContextType",
+        "ProjectStatus",
+        "EvidenceItemStatus",
+        "EvidenceRelationType",
+        "VerificationOutcome",
+        "ContradictionStatus",
+        "EvidenceRequestStatus",
+        "ImportBatchStatus",
+        "DataClassification",
+    )
+    return {
+        "schema_version": taxonomies.SCHEMA_VERSION,
+        "taxonomies": {
+            name: [member.value for member in getattr(taxonomies, name)] for name in names
+        },
+    }
