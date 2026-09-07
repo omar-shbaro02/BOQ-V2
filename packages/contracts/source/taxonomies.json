@@ -81,6 +81,22 @@
       "BOQ_VALUE_EARNED",
       "REPORTED_PERCENT_COMPLETE"
     ],
+    "ProgressMeasurementKind": [
+      "PLANNED_AUTHORIZED",
+      "REPORTED",
+      "EXECUTED",
+      "VERIFIED",
+      "ACCEPTED_RELEASED"
+    ],
+    "ProgressReconciliationStatus": [
+      "RECONCILED",
+      "INCOMPARABLE_BASIS",
+      "INSUFFICIENT_INPUT",
+      "VERIFICATION_REQUIRED"
+    ],
+    "DeviationDirection": ["AHEAD", "ON_PLAN", "BEHIND"],
+    "TrendPersistence": ["TRANSIENT", "PERSISTENT"],
+    "TrendDirection": ["FIRST_OBSERVATION", "DETERIORATING", "STABLE", "RECOVERING"],
     "UrgencyLevel": ["NONE", "ROUTINE", "ELEVATED", "URGENT", "IMMEDIATE"],
     "SpecialistKind": [
       "EVIDENCE_PROGRESS",
@@ -114,6 +130,84 @@
     "ContradictionStatus": ["OPEN", "RESOLVED"],
     "EvidenceRequestStatus": ["OPEN", "SATISFIED", "CANCELLED"],
     "ImportBatchStatus": ["PREVIEW", "COMMITTED", "REJECTED"],
-    "DataClassification": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+    "DataClassification": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"],
+    "SignalType": [
+      "PROGRESS_VARIANCE",
+      "SCHEDULE_VARIANCE",
+      "COST_VARIANCE",
+      "EVIDENCE_CONFLICT",
+      "MILESTONE_EXPOSURE"
+    ],
+    "SignalStatus": [
+      "CANDIDATE",
+      "SCREENED",
+      "DEFERRED",
+      "DISMISSED",
+      "CORRELATED",
+      "EXPIRED"
+    ],
+    "ScreeningOutcome": ["RELEVANT", "DEFER", "DISMISS"],
+    "ScreeningReasonCode": [
+      "MATERIAL_THRESHOLD_CROSSED",
+      "UNRESOLVED_EVIDENCE_CONFLICT",
+      "DEPENDENCY_EXPOSURE",
+      "BELOW_THRESHOLD",
+      "AUTHORIZED_CHANGE_EXPLAINS",
+      "INSUFFICIENT_CONTEXT",
+      "TRANSIENT_NOISE",
+      "AWAITING_EVIDENCE",
+      "DUPLICATE",
+      "OTHER"
+    ],
+    "MaterialityBand": ["IMMATERIAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "CorrelationOutcome": [
+      "LINK_EXISTING",
+      "OPEN_NEW",
+      "CROSS_CUTTING_PARENT_CHILD",
+      "DEFER",
+      "DISMISS"
+    ],
+    "CorrelationReviewStatus": ["PENDING", "ACCEPTED", "REJECTED"],
+    "ConclusionType": [
+      "VERIFY_EVIDENCE",
+      "MONITOR_CONDITION",
+      "PROGRESS_INTERVENTION",
+      "SCHEDULE_INTERVENTION",
+      "COST_INTERVENTION"
+    ],
+    "BaselineValidity": ["VALID", "STALE", "DISPUTED", "MISSING", "NOT_APPLICABLE"],
+    "LimitationStatus": ["OPEN", "RESOLVED"],
+    "LimitationCode": [
+      "MISSING_REQUIRED_FIELD",
+      "STALE_EVIDENCE",
+      "WEAK_TRUTH_SUPPORT",
+      "UNRESOLVED_CONTRADICTION",
+      "MISSING_AUTHORIZED_CONTEXT",
+      "INVALID_BASELINE",
+      "ACTIVE_RESPONSE_UNASSESSED"
+    ],
+    "ActiveResponseStatus": ["ACTIVE", "COMPLETED", "FAILED", "CANCELLED"],
+    "CaseLedgerEventType": [
+      "CASE_OPENED",
+      "EVIDENCE_ATTACHED",
+      "RESPONSE_LINKED",
+      "SNAPSHOT_CREATED",
+      "BASELINE_CHALLENGED",
+      "SUFFICIENCY_ASSESSED",
+      "LIMITATION_RESOLVED",
+      "LIFECYCLE_TRANSITIONED",
+      "CASE_BLOCKED",
+      "CASE_RESUMED",
+      "CASE_CLOSED",
+      "CASE_REOPENED",
+      "PROGRESS_EVALUATED"
+    ],
+    "CaseReopenTrigger": [
+      "NEW_MATERIAL_EVIDENCE",
+      "FORECAST_EXPIRED",
+      "RESPONSE_FAILED",
+      "CONSEQUENCE_RENEWED",
+      "ADMINISTRATIVE_CORRECTION"
+    ]
   }
 }

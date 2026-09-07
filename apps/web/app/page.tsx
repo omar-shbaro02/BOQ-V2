@@ -13,14 +13,23 @@ export default function Home() {
       <section className="panel" aria-labelledby="phase-heading">
         <div>
           <span className="label">Current build</span>
-          <h2 id="phase-heading">Phase 2 · Evidence workbench</h2>
+          <h2 id="phase-heading">Phase 5 · Progress truth</h2>
         </div>
         <div className="panel-actions">
           <Link className="quiet-link" href="/setup">
             Configure project
           </Link>
           <Link className="status" href="/evidence">
-            Open workbench →
+            Evidence
+          </Link>
+          <Link className="status" href="/signals">
+            Signals
+          </Link>
+          <Link className="status" href="/cases">
+            Decision cases
+          </Link>
+          <Link className="status" href="/progress">
+            Progress →
           </Link>
         </div>
       </section>

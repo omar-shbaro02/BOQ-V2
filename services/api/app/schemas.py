@@ -12,6 +12,7 @@ from app.generated.taxonomies import (
     AuthorizedContextType,
     ControlledObjectRelationType,
     ControlledObjectType,
+    ProgressBasis,
     ProjectRole,
     ProjectStatus,
     SemanticState,
@@ -147,6 +148,20 @@ class AuthorityGrantRead(AuthorityGrantCreate):
     active: bool
 
 
+class PlannedProgressPoint(ApiModel):
+    as_of: date
+    numerator: Decimal = Field(ge=0)
+    denominator: Decimal = Field(gt=0)
+    unit: str = Field(min_length=1, max_length=30)
+    measurement_basis: ProgressBasis
+
+    @model_validator(mode="after")
+    def within_denominator(self) -> PlannedProgressPoint:
+        if self.numerator > self.denominator:
+            raise ValueError("Planned progress cannot exceed its denominator")
+        return self
+
+
 class ScheduleActivity(ApiModel):
     code: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=2, max_length=240)
@@ -154,11 +169,16 @@ class ScheduleActivity(ApiModel):
     planned_finish: date
     progress_basis: str = Field(min_length=2, max_length=80)
     responsible_owner: str = Field(min_length=1, max_length=200)
+    controlled_object_code: str | None = Field(default=None, min_length=1, max_length=80)
+    progress_plan: list[PlannedProgressPoint] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def valid_dates(self) -> ScheduleActivity:
         if self.planned_finish < self.planned_start:
             raise ValueError("planned_finish must not precede planned_start")
+        dates = [point.as_of for point in self.progress_plan]
+        if dates != sorted(dates) or len(dates) != len(set(dates)):
+            raise ValueError("Planned progress points must have unique ascending dates")
         return self
 
 

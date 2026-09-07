@@ -29,6 +29,21 @@ export type ControlledObjectType = (typeof ControlledObjectTypeValues)[number];
 export const ProgressBasisValues = ["PHYSICAL_EXECUTED", "PHYSICAL_VERIFIED", "ACCEPTED_RELEASED", "DURATION_ELAPSED", "WEIGHTED_MILESTONE", "BOQ_VALUE_EARNED", "REPORTED_PERCENT_COMPLETE"] as const;
 export type ProgressBasis = (typeof ProgressBasisValues)[number];
 
+export const ProgressMeasurementKindValues = ["PLANNED_AUTHORIZED", "REPORTED", "EXECUTED", "VERIFIED", "ACCEPTED_RELEASED"] as const;
+export type ProgressMeasurementKind = (typeof ProgressMeasurementKindValues)[number];
+
+export const ProgressReconciliationStatusValues = ["RECONCILED", "INCOMPARABLE_BASIS", "INSUFFICIENT_INPUT", "VERIFICATION_REQUIRED"] as const;
+export type ProgressReconciliationStatus = (typeof ProgressReconciliationStatusValues)[number];
+
+export const DeviationDirectionValues = ["AHEAD", "ON_PLAN", "BEHIND"] as const;
+export type DeviationDirection = (typeof DeviationDirectionValues)[number];
+
+export const TrendPersistenceValues = ["TRANSIENT", "PERSISTENT"] as const;
+export type TrendPersistence = (typeof TrendPersistenceValues)[number];
+
+export const TrendDirectionValues = ["FIRST_OBSERVATION", "DETERIORATING", "STABLE", "RECOVERING"] as const;
+export type TrendDirection = (typeof TrendDirectionValues)[number];
+
 export const UrgencyLevelValues = ["NONE", "ROUTINE", "ELEVATED", "URGENT", "IMMEDIATE"] as const;
 export type UrgencyLevel = (typeof UrgencyLevelValues)[number];
 
@@ -67,4 +82,46 @@ export type ImportBatchStatus = (typeof ImportBatchStatusValues)[number];
 
 export const DataClassificationValues = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] as const;
 export type DataClassification = (typeof DataClassificationValues)[number];
+
+export const SignalTypeValues = ["PROGRESS_VARIANCE", "SCHEDULE_VARIANCE", "COST_VARIANCE", "EVIDENCE_CONFLICT", "MILESTONE_EXPOSURE"] as const;
+export type SignalType = (typeof SignalTypeValues)[number];
+
+export const SignalStatusValues = ["CANDIDATE", "SCREENED", "DEFERRED", "DISMISSED", "CORRELATED", "EXPIRED"] as const;
+export type SignalStatus = (typeof SignalStatusValues)[number];
+
+export const ScreeningOutcomeValues = ["RELEVANT", "DEFER", "DISMISS"] as const;
+export type ScreeningOutcome = (typeof ScreeningOutcomeValues)[number];
+
+export const ScreeningReasonCodeValues = ["MATERIAL_THRESHOLD_CROSSED", "UNRESOLVED_EVIDENCE_CONFLICT", "DEPENDENCY_EXPOSURE", "BELOW_THRESHOLD", "AUTHORIZED_CHANGE_EXPLAINS", "INSUFFICIENT_CONTEXT", "TRANSIENT_NOISE", "AWAITING_EVIDENCE", "DUPLICATE", "OTHER"] as const;
+export type ScreeningReasonCode = (typeof ScreeningReasonCodeValues)[number];
+
+export const MaterialityBandValues = ["IMMATERIAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+export type MaterialityBand = (typeof MaterialityBandValues)[number];
+
+export const CorrelationOutcomeValues = ["LINK_EXISTING", "OPEN_NEW", "CROSS_CUTTING_PARENT_CHILD", "DEFER", "DISMISS"] as const;
+export type CorrelationOutcome = (typeof CorrelationOutcomeValues)[number];
+
+export const CorrelationReviewStatusValues = ["PENDING", "ACCEPTED", "REJECTED"] as const;
+export type CorrelationReviewStatus = (typeof CorrelationReviewStatusValues)[number];
+
+export const ConclusionTypeValues = ["VERIFY_EVIDENCE", "MONITOR_CONDITION", "PROGRESS_INTERVENTION", "SCHEDULE_INTERVENTION", "COST_INTERVENTION"] as const;
+export type ConclusionType = (typeof ConclusionTypeValues)[number];
+
+export const BaselineValidityValues = ["VALID", "STALE", "DISPUTED", "MISSING", "NOT_APPLICABLE"] as const;
+export type BaselineValidity = (typeof BaselineValidityValues)[number];
+
+export const LimitationStatusValues = ["OPEN", "RESOLVED"] as const;
+export type LimitationStatus = (typeof LimitationStatusValues)[number];
+
+export const LimitationCodeValues = ["MISSING_REQUIRED_FIELD", "STALE_EVIDENCE", "WEAK_TRUTH_SUPPORT", "UNRESOLVED_CONTRADICTION", "MISSING_AUTHORIZED_CONTEXT", "INVALID_BASELINE", "ACTIVE_RESPONSE_UNASSESSED"] as const;
+export type LimitationCode = (typeof LimitationCodeValues)[number];
+
+export const ActiveResponseStatusValues = ["ACTIVE", "COMPLETED", "FAILED", "CANCELLED"] as const;
+export type ActiveResponseStatus = (typeof ActiveResponseStatusValues)[number];
+
+export const CaseLedgerEventTypeValues = ["CASE_OPENED", "EVIDENCE_ATTACHED", "RESPONSE_LINKED", "SNAPSHOT_CREATED", "BASELINE_CHALLENGED", "SUFFICIENCY_ASSESSED", "LIMITATION_RESOLVED", "LIFECYCLE_TRANSITIONED", "CASE_BLOCKED", "CASE_RESUMED", "CASE_CLOSED", "CASE_REOPENED", "PROGRESS_EVALUATED"] as const;
+export type CaseLedgerEventType = (typeof CaseLedgerEventTypeValues)[number];
+
+export const CaseReopenTriggerValues = ["NEW_MATERIAL_EVIDENCE", "FORECAST_EXPIRED", "RESPONSE_FAILED", "CONSEQUENCE_RENEWED", "ADMINISTRATIVE_CORRECTION"] as const;
+export type CaseReopenTrigger = (typeof CaseReopenTriggerValues)[number];
 

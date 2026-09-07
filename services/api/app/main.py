@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.generated import taxonomies
+from app.routers.cases import router as cases_router
 from app.routers.control_context import router as control_context_router
 from app.routers.evidence import router as evidence_router
+from app.routers.progress import router as progress_router
+from app.routers.signals import router as signals_router
 
 settings = get_settings()
 app = FastAPI(
@@ -27,6 +30,9 @@ app.add_middleware(
 )
 app.include_router(control_context_router)
 app.include_router(evidence_router)
+app.include_router(signals_router)
+app.include_router(cases_router)
+app.include_router(progress_router)
 
 
 @app.get("/health", tags=["operations"])
@@ -59,6 +65,25 @@ def get_taxonomies() -> dict[str, object]:
         "EvidenceRequestStatus",
         "ImportBatchStatus",
         "DataClassification",
+        "SignalType",
+        "SignalStatus",
+        "ScreeningOutcome",
+        "ScreeningReasonCode",
+        "MaterialityBand",
+        "CorrelationOutcome",
+        "CorrelationReviewStatus",
+        "ConclusionType",
+        "BaselineValidity",
+        "LimitationStatus",
+        "LimitationCode",
+        "ActiveResponseStatus",
+        "CaseLedgerEventType",
+        "CaseReopenTrigger",
+        "ProgressMeasurementKind",
+        "ProgressReconciliationStatus",
+        "DeviationDirection",
+        "TrendPersistence",
+        "TrendDirection",
     )
     return {
         "schema_version": taxonomies.SCHEMA_VERSION,

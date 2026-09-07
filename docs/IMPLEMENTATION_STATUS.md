@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ## Completed phases
 
@@ -89,13 +89,109 @@ Verification evidence:
 
 Limitations: production object storage and a maintained production malware-scanning engine have not been selected. The local object store and deterministic EICAR gate are development/test adapters only; both dependencies fail closed with `503` outside development/test. File extension/content validation and upload-size enforcement remain active at the application boundary.
 
+### Phase 3 — Signals, screening, and case correlation
+
+Status: **complete**.
+
+Delivered:
+
+- Five deterministic, versioned candidate-detector families for progress variance, schedule variance, cost variance, unresolved evidence conflict, and milestone exposure.
+- Explicit detector thresholds, source evidence/contradiction lineage, controlled-object scope, observed values/times, expiry, and initial materiality candidates.
+- Stable project-scoped fingerprints and evidence links that deduplicate repeated observations without losing occurrence/source lineage.
+- Idempotent detection runs with request-payload hashing and mismatch rejection.
+- Signal lifecycle distinct from Decision Cases: `CANDIDATE`, `SCREENED`, `DEFERRED`, `DISMISSED`, `CORRELATED`, and `EXPIRED`.
+- Reason-coded relevance, defer, and dismissal screening with append-only decision history and optimistic workflow-version checks.
+- Explicit due-signal expiry command and stale-version protection.
+- Deterministic case-correlation suggestions for `OPEN_NEW`, `LINK_EXISTING`, and `CROSS_CUTTING_PARENT_CHILD`, including visible rationale and confidence.
+- Human-reviewed correlation acceptance/rejection; suggestions never open/link/merge cases autonomously.
+- Minimal Phase 3 Decision Case shells and signal/object links needed for reviewed correlation. Full lifecycle, snapshots, sufficiency, and case ledger remain Phase 4 work.
+- Independent-object protection: an unrelated signal receives `OPEN_NEW` even when another project case exists, preventing project-wide forced merging.
+- Reviewed cross-cutting parent creation requiring at least two explicit child cases.
+- Transactional outbox records for `SignalRaised`, `SignalScreened`, `CaseOpened`, and `SignalLinked`, alongside project audit events.
+- Filterable/paginated signal APIs, screening history, correlation review, case-shell query, and outbox query projections.
+- Browser Signal Inbox for detector execution, status filtering, screening, correlation explanation, and explicit accept/reject actions.
+- Shared Python/TypeScript signal, screening, materiality, and correlation taxonomies.
+
+Verification evidence:
+
+- 38 API/domain/integration tests passed, including all five detectors, fingerprint/run idempotency, idempotency mismatch, occurrence preservation, stale-version rejection, defer reason/deadline, expiry, correlation rejection, reviewed new/existing/cross-cutting outcomes, independent-signal non-merging, tenant membership denial, and transactional outbox creation.
+- Live PostgreSQL `0003_evidence → 0004_signals → 0003_evidence → 0004_signals` migration rehearsal passed.
+- Seven Phase 3 tables and four append-only triggers were verified after re-upgrade.
+- Live PostgreSQL API smoke passed from evidence assertion through signal detection, screening, reviewed case opening, signal linkage, audit, and four outbox events.
+- A direct PostgreSQL attempt to mutate a screening decision was rejected by the append-only trigger.
+- Ruff, generated-contract freshness, ESLint, strict TypeScript, and the Next.js production build passed with the `/signals` route.
+
+Phase boundary: detector thresholds are explicit deterministic defaults in detector version `1.0.0`. Project/delivery-model policy versioning and replay impact belong to the later policy/evaluation phases. The `decision_case` record is intentionally a correlation shell; it does not yet imply readiness, recommendation, human disposition, or execution authority.
+
+### Phase 4 — Decision Case lifecycle and sufficiency
+
+Status: **complete**.
+
+Delivered:
+
+- Expanded Decision Case aggregate with optimistic versions, explicit ownership, separate lifecycle/readiness/governance/autonomy state, governed forward transitions, and block/resume/close/reopen rules.
+- Immutable, idempotent case snapshots capturing exact case version, data date, controlled objects, signals, attached evidence, unresolved contradictions, effective authorized context, active responses, policy version, and deterministic content hash.
+- Append-only baseline and conclusion-specific sufficiency assessments with visible policy `PHASE4-SUFFICIENCY-1.0.0`.
+- Exact missing, stale, weak, contradictory, unauthorized-context, baseline-validity, and active-response limitations; materiality, owner, deadline, and linked evidence-request records are retained.
+- Readiness outcomes `DECISION_READY`, `DECISION_READY_WITH_LIMITATIONS`, `VERIFICATION_REQUIRED`, and `INSUFFICIENT`, including maximum-supported-conclusion projection and lifecycle stop gates.
+- Baseline challenge and historical effective-context selection without rewriting the frozen snapshot.
+- Authorized active-response references and response-aware snapshot/sufficiency behavior.
+- Chronological append-only case ledger, project audit entries, and transactional `CaseClosed`/`CaseReopened` outbox events.
+- Closure requiring an outcome reference or admin-authorized rationale; reopening requiring a material trigger, with referenced new evidence and failed-response validation where applicable.
+- Browser Decision Case Center for evidence assembly, snapshots, sufficiency, limitations, active responses, lifecycle movement, blocking/resuming, baseline challenges, closure, reopening, and ledger inspection.
+- Shared Python/TypeScript conclusion, baseline, limitation, response, ledger, and reopen-trigger taxonomies.
+
+Verification evidence:
+
+- 43 API/domain/integration tests passed, including snapshot idempotency/hash persistence, conclusion-specific exact gaps, missing-context and weak-truth stops, disputed baselines, material contradictions, active-response limitations, lifecycle gates, stale versions, block/resume, closure basis, material-evidence reopening, failed-response reopening rejection, tenant isolation, and unsupported-policy rejection.
+- Live PostgreSQL `0004_signals → 0005_decision_cases → 0004_signals → 0005_decision_cases` migration rehearsal passed.
+- Seven Phase 4 tables, seven protection triggers, and three aggregate taxonomy constraints were verified after re-upgrade.
+- Live PostgreSQL API smoke passed through case opening, verified evidence attachment, authorized schedule and active response, immutable snapshot, schedule-intervention sufficiency, governed limitation resolution, closure, and material-evidence reopening.
+- Direct PostgreSQL attempts to mutate a frozen snapshot or the immutable fields of a limitation were rejected by database triggers.
+- Ruff, generated-contract freshness, ESLint, strict TypeScript, and the Next.js production build passed with the `/cases` route.
+
+Phase boundary: Phase 4 evaluates whether evidence supports a named conclusion; it does not yet calculate progress reconciliation, persistent trends, schedule consequence paths, cost forecasts, recommendation dispositions, or a human management decision. Those remain intentionally downstream.
+
+### Phase 5 — Progress truth and deviation intelligence
+
+Status: **complete**.
+
+Delivered:
+
+- Evidence-backed immutable progress measurements that keep `PLANNED_AUTHORIZED`, `REPORTED`, `EXECUTED`, `VERIFIED`, and `ACCEPTED_RELEASED` gates separate.
+- Explicit progress bases, numerator, denominator, unit, completion ratio, as-of time, semantic state, truth type, confidence, controlled object, and source-evidence lineage.
+- Authorized schedule progress curves tied to controlled-object codes; planned measurements must exactly match a point in the schedule version authorized at their as-of time.
+- Compatible-basis, compatible-unit, and compatible-denominator gates that reject false percentage comparisons.
+- Snapshot-bound, idempotent progress evaluations with deterministic request hashing and optimistic Decision Case version checks.
+- Reconciled gate projection, planned-versus-actual variance direction and magnitude, visible threshold crossing, duration, trend direction, and persistence.
+- A visible default threshold policy plus immutable project policy versions. Policy changes affect explicitly selected future evaluations without rewriting prior results.
+- Persistence requiring three consistent threshold-crossing observations across seven days by default; a single observation remains `TRANSIENT`.
+- Planned and actual productivity from paired cumulative observations, including exact prior/current input lineage and formula version.
+- Derived truth propagation: ordinary calculations remain `DERIVED_METRIC`; unresolved source contradictions produce `CONTRADICTED` output and `VERIFICATION_REQUIRED` reconciliation instead of a stronger assertion.
+- Confidence capped at the weakest selected input and explicit limitations for weak actual truth, unresolved contradictions, and undefined zero-plan productivity.
+- Append-only progress policies, measurements, and evaluations, with the latest evaluation referenced by—but not merged into—the Decision Case aggregate.
+- Browser Progress Reconciliation workbench and Decision Case progress panel showing separated gates, measurement bases, truth labels, deviation, productivity, trend, and persistence.
+- Shared Python/TypeScript progress-kind, reconciliation, deviation, trend, and persistence taxonomies.
+
+Verification evidence:
+
+- 46 API/domain/integration tests passed, including separated progress gates, exact authorized-plan lineage, normalization idempotency, incompatible-basis rejection, snapshot containment, derived truth preservation, contradiction propagation, custom threshold selection, three-observation/seven-day persistence, productivity calculation, policy immutability, and tenant/case controls inherited from prior phases.
+- Live PostgreSQL `0005_decision_cases → 0006_progress_intelligence → 0005_decision_cases → 0006_progress_intelligence` migration rehearsal passed.
+- Three Phase 5 tables and three append-only triggers were verified after re-upgrade.
+- Live PostgreSQL API smoke passed through authorized time-phased plan creation, verified progress normalization, case snapshot, and a `BEHIND` transient derived deviation.
+- Direct PostgreSQL mutation attempts against a threshold policy, normalized measurement, and progress evaluation were rejected by database triggers.
+- Generated-contract freshness, Ruff, Python formatting/compilation, ESLint, strict TypeScript, and the Next.js production build passed with the `/progress` and enhanced `/cases` routes.
+
+Phase boundary: Phase 5 establishes current progress truth and deviation persistence. It does not infer schedule dependency consequences, forecast completion, diagnose root cause, recommend a disposition, or record a human decision.
+
 ## Next phase
 
-Phase 3 — Signals, screening, and case correlation.
+Phase 6 — Schedule and dependency intelligence.
 
 Next implementation order:
 
-1. Deterministic signal candidates for progress, schedule, cost, evidence conflict, and milestone exposure.
-2. Relevance/materiality screening, expiry, reason-coded dismissal/defer, and idempotent deduplication.
-3. Reviewed correlation outcomes for existing, new, and cross-cutting Decision Cases.
-4. Signal inbox, project-scoped authorization, and audit events.
+1. Parse and validate minimal activity networks, calendars, constraints, dependencies, milestones, and supplied/calculable float.
+2. Resolve the schedule version effective at each case data date and calculate activity/milestone timing variance.
+3. Trace credible downstream paths and distinguish isolated delay from consequential delay.
+4. Surface schedule-quality and missing-dependency limitations without inventing unsupported logic.
+5. Add schedule intelligence to Decision Cases and cover schedule-only and approved-change scenarios.
