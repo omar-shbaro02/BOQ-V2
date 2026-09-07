@@ -607,6 +607,38 @@ class DecisionCaseShell(Base):
             use_alter=True,
         )
     )
+    last_schedule_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "schedule_assessment.id",
+            name="fk_decision_case_last_schedule_assessment",
+            ondelete="RESTRICT",
+            use_alter=True,
+        )
+    )
+    last_cost_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "cost_assessment.id",
+            name="fk_decision_case_last_cost_assessment",
+            ondelete="RESTRICT",
+            use_alter=True,
+        )
+    )
+    last_forecast_projection_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "forecast_projection.id",
+            name="fk_decision_case_last_forecast_projection",
+            ondelete="RESTRICT",
+            use_alter=True,
+        )
+    )
+    last_impact_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "impact_assessment.id",
+            name="fk_decision_case_last_impact_assessment",
+            ondelete="RESTRICT",
+            use_alter=True,
+        )
+    )
     outcome_reference: Mapped[str | None] = mapped_column(String(200))
     close_reason: Mapped[str | None] = mapped_column(Text)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1047,5 +1079,441 @@ class ProgressEvaluation(Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     evaluated_by: Mapped[str] = mapped_column(String(200), nullable=False)
     evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ScheduleAnalysisPolicy(Base):
+    __tablename__ = "schedule_analysis_policy"
+    __table_args__ = (
+        UniqueConstraint("project_id", "policy_version", name="uq_schedule_policy_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    on_time_tolerance_days: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    maximum_schedule_age_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    require_dependency_for_consequence: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allow_calculated_float: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    supersedes_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("schedule_analysis_policy.id", ondelete="RESTRICT")
+    )
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScheduleAssessment(Base):
+    __tablename__ = "schedule_assessment"
+    __table_args__ = (
+        UniqueConstraint("case_id", "assessment_number", name="uq_schedule_assessment_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_schedule_assessment_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    schedule_context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT"), index=True
+    )
+    controlled_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("controlled_object.id", ondelete="RESTRICT"), index=True
+    )
+    delay_evidence_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("evidence_item.id", ondelete="RESTRICT")
+    )
+    assessment_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    activity_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    data_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    planned_start: Mapped[date] = mapped_column(Date, nullable=False)
+    planned_finish: Mapped[date] = mapped_column(Date, nullable=False)
+    delay_days: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    timing_direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    effective_float_days: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    float_source: Mapped[str] = mapped_column(String(20), nullable=False)
+    schedule_quality: Mapped[str] = mapped_column(String(40), nullable=False)
+    assessment_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    exposure_level: Mapped[str] = mapped_column(String(30), nullable=False)
+    downstream_paths: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    affected_activity_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    milestone_exposures: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    project_completion_exposure_days: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    maximum_supported_conclusion: Mapped[str] = mapped_column(String(40), nullable=False)
+    input_evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    truth_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessed_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CostAnalysisPolicy(Base):
+    __tablename__ = "cost_analysis_policy"
+    __table_args__ = (
+        UniqueConstraint("project_id", "policy_version", name="uq_cost_policy_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    alignment_tolerance: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    minimum_earned_ratio_for_forecast: Mapped[Decimal] = mapped_column(
+        Numeric(8, 6), nullable=False
+    )
+    include_accruals_in_recognized_cost: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    supersedes_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_analysis_policy.id", ondelete="RESTRICT")
+    )
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CostRecord(Base):
+    __tablename__ = "cost_record"
+    __table_args__ = (UniqueConstraint("evidence_item_id", name="uq_cost_record_evidence"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    controlled_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("controlled_object.id", ondelete="RESTRICT"), index=True
+    )
+    evidence_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("evidence_item.id", ondelete="RESTRICT"), index=True
+    )
+    authorized_context_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT")
+    )
+    record_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    measurement_basis: Mapped[str] = mapped_column(String(80), nullable=False)
+    reporting_period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    reporting_period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    commercial_effect: Mapped[str] = mapped_column(String(30), nullable=False)
+    effect_explanation: Mapped[str | None] = mapped_column(Text)
+    semantic_state: Mapped[str] = mapped_column(String(30), nullable=False)
+    truth_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    recorded_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CostAssessment(Base):
+    __tablename__ = "cost_assessment"
+    __table_args__ = (
+        UniqueConstraint("case_id", "assessment_number", name="uq_cost_assessment_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_cost_assessment_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    budget_context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT"), index=True
+    )
+    controlled_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("controlled_object.id", ondelete="RESTRICT"), index=True
+    )
+    assessment_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    data_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reporting_period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    reporting_period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    measurement_basis: Mapped[str] = mapped_column(String(80), nullable=False)
+    approved_budget: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    authorized_changes: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    current_authorized_budget: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    commitments: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    actuals: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    accruals: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    recognized_cost: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    earned_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    physical_progress_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    cost_consumption_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    progress_value_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    alignment_variance_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    alignment_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    explained_effects: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    unexplained_variance_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    forecast_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    forecast_to_complete: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    estimate_at_completion: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    assessment_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    maximum_supported_conclusion: Mapped[str] = mapped_column(String(40), nullable=False)
+    input_cost_record_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    input_evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    truth_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessed_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ForecastPolicy(Base):
+    __tablename__ = "forecast_policy"
+    __table_args__ = (
+        UniqueConstraint("project_id", "policy_version", name="uq_forecast_policy_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    lower_rate_factor: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    upper_rate_factor: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    lower_cost_factor: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    upper_cost_factor: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    confidence_decay_per_30_days: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    confidence_floor: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    maximum_horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    validity_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    supersedes_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("forecast_policy.id", ondelete="RESTRICT")
+    )
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ForecastProjection(Base):
+    __tablename__ = "forecast_projection"
+    __table_args__ = (
+        UniqueConstraint("case_id", "forecast_number", name="uq_forecast_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_forecast_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    controlled_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("controlled_object.id", ondelete="RESTRICT"), index=True
+    )
+    progress_evaluation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("progress_evaluation.id", ondelete="RESTRICT")
+    )
+    schedule_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("schedule_assessment.id", ondelete="RESTRICT")
+    )
+    cost_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_assessment.id", ondelete="RESTRICT")
+    )
+    active_response_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("case_active_response.id", ondelete="RESTRICT")
+    )
+    forecast_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    target: Mapped[str] = mapped_column(String(40), nullable=False)
+    scenario_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    method: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    semantic_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    truth_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    data_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    horizon_end: Mapped[date] = mapped_column(Date, nullable=False)
+    horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    result_point: Mapped[str] = mapped_column(String(80), nullable=False)
+    result_lower: Mapped[str] = mapped_column(String(80), nullable=False)
+    result_upper: Mapped[str] = mapped_column(String(80), nullable=False)
+    input_values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    input_evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    scenario_parameters: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    upstream_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    horizon_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recalculation_triggers: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ImpactPriorityPolicy(Base):
+    __tablename__ = "impact_priority_policy"
+    __table_args__ = (
+        UniqueConstraint("project_id", "policy_version", name="uq_impact_policy_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    medium_cost_exposure_ratio: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    high_cost_exposure_ratio: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    critical_cost_exposure_ratio: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    elevated_margin_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    urgent_margin_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_response_score_reduction: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    cross_cutting_bonus_per_object: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    medium_priority_score: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    high_priority_score: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    critical_priority_score: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    supersedes_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("impact_priority_policy.id", ondelete="RESTRICT")
+    )
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConfidenceOverride(Base):
+    __tablename__ = "confidence_override"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    upstream_ceiling: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    approved_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    justification: Mapped[str] = mapped_column(Text, nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ImpactAssessment(Base):
+    __tablename__ = "impact_assessment"
+    __table_args__ = (
+        UniqueConstraint("case_id", "assessment_number", name="uq_impact_assessment_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_impact_assessment_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    controlled_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("controlled_object.id", ondelete="RESTRICT"), index=True
+    )
+    progress_evaluation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("progress_evaluation.id", ondelete="RESTRICT")
+    )
+    schedule_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("schedule_assessment.id", ondelete="RESTRICT")
+    )
+    cost_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_assessment.id", ondelete="RESTRICT")
+    )
+    forecast_projection_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    confidence_override_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("confidence_override.id", ondelete="RESTRICT")
+    )
+    assessment_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    consequence_paths: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    consequence_severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    decision_clocks: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    response_lead_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    urgency_margin_days: Mapped[int | None] = mapped_column(Integer)
+    urgency: Mapped[str] = mapped_column(String(20), nullable=False)
+    truth_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    forecast_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    consequence_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    upstream_confidence_ceiling: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    overall_confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    cross_cutting_reach: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_response_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    priority_score: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    priority_band: Mapped[str] = mapped_column(String(20), nullable=False)
+    priority_reason_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    assessment_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessed_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

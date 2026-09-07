@@ -5,8 +5,12 @@ from app.config import get_settings
 from app.generated import taxonomies
 from app.routers.cases import router as cases_router
 from app.routers.control_context import router as control_context_router
+from app.routers.cost import router as cost_router
 from app.routers.evidence import router as evidence_router
+from app.routers.forecast import router as forecast_router
+from app.routers.impact import router as impact_router
 from app.routers.progress import router as progress_router
+from app.routers.schedule import router as schedule_router
 from app.routers.signals import router as signals_router
 
 settings = get_settings()
@@ -33,6 +37,10 @@ app.include_router(evidence_router)
 app.include_router(signals_router)
 app.include_router(cases_router)
 app.include_router(progress_router)
+app.include_router(schedule_router)
+app.include_router(cost_router)
+app.include_router(forecast_router)
+app.include_router(impact_router)
 
 
 @app.get("/health", tags=["operations"])
@@ -84,6 +92,31 @@ def get_taxonomies() -> dict[str, object]:
         "DeviationDirection",
         "TrendPersistence",
         "TrendDirection",
+        "ScheduleDependencyType",
+        "ScheduleConstraintType",
+        "ScheduleQualityStatus",
+        "ScheduleAssessmentStatus",
+        "ScheduleTimingDirection",
+        "FloatSource",
+        "ScheduleExposureLevel",
+        "ScheduleConclusion",
+        "CostRecordKind",
+        "CommercialEffectType",
+        "CostAlignmentStatus",
+        "CostAssessmentStatus",
+        "CostForecastStatus",
+        "CostConclusion",
+        "ForecastTarget",
+        "ForecastScenarioType",
+        "ForecastMethod",
+        "ForecastStatus",
+        "ForecastValidity",
+        "ForecastRecalculationTrigger",
+        "ConsequenceType",
+        "ConsequenceSeverity",
+        "ImpactAssessmentStatus",
+        "PriorityBand",
+        "DecisionClockType",
     )
     return {
         "schema_version": taxonomies.SCHEMA_VERSION,

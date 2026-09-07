@@ -13,7 +13,7 @@ export default function Home() {
       <section className="panel" aria-labelledby="phase-heading">
         <div>
           <span className="label">Current build</span>
-          <h2 id="phase-heading">Phase 5 · Progress truth</h2>
+          <h2 id="phase-heading">Phase 8 · Forecast and scenarios</h2>
         </div>
         <div className="panel-actions">
           <Link className="quiet-link" href="/setup">
@@ -29,7 +29,16 @@ export default function Home() {
             Decision cases
           </Link>
           <Link className="status" href="/progress">
-            Progress →
+            Progress
+          </Link>
+          <Link className="status" href="/schedule">
+            Schedule
+          </Link>
+          <Link className="status" href="/cost">
+            Cost
+          </Link>
+          <Link className="status" href="/forecast">
+            Forecast →
           </Link>
         </div>
       </section>

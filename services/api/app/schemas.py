@@ -15,6 +15,8 @@ from app.generated.taxonomies import (
     ProgressBasis,
     ProjectRole,
     ProjectStatus,
+    ScheduleConstraintType,
+    ScheduleDependencyType,
     SemanticState,
 )
 
@@ -162,6 +164,25 @@ class PlannedProgressPoint(ApiModel):
         return self
 
 
+class ScheduleCalendar(ApiModel):
+    calendar_id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=160)
+    working_weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+    holidays: list[date] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def valid_calendar(self) -> ScheduleCalendar:
+        if not self.working_weekdays or any(
+            value < 0 or value > 6 for value in self.working_weekdays
+        ):
+            raise ValueError("Schedule calendar weekdays must be unique values from 0 to 6")
+        if len(self.working_weekdays) != len(set(self.working_weekdays)):
+            raise ValueError("Schedule calendar weekdays must be unique values from 0 to 6")
+        if len(self.holidays) != len(set(self.holidays)):
+            raise ValueError("Schedule calendar holidays must be unique")
+        return self
+
+
 class ScheduleActivity(ApiModel):
     code: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=2, max_length=240)
@@ -171,6 +192,8 @@ class ScheduleActivity(ApiModel):
     responsible_owner: str = Field(min_length=1, max_length=200)
     controlled_object_code: str | None = Field(default=None, min_length=1, max_length=80)
     progress_plan: list[PlannedProgressPoint] = Field(default_factory=list)
+    calendar_id: str = Field(default="PROJECT", min_length=1, max_length=80)
+    total_float_days: Decimal | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def valid_dates(self) -> ScheduleActivity:
@@ -185,20 +208,32 @@ class ScheduleActivity(ApiModel):
 class ScheduleDependency(ApiModel):
     predecessor_code: str
     successor_code: str
-    relation_type: str = Field(default="FINISH_TO_START", pattern=r"^[A-Z_]+$")
+    relation_type: ScheduleDependencyType = ScheduleDependencyType.FINISH_TO_START
     lag_days: Decimal = Decimal("0")
+
+
+class ScheduleConstraint(ApiModel):
+    activity_code: str = Field(min_length=1, max_length=80)
+    constraint_type: ScheduleConstraintType
+    constraint_date: date
 
 
 class ScheduleMilestone(ApiModel):
     code: str
     name: str
     planned_date: date
+    activity_code: str | None = None
+    controlled_object_code: str | None = None
+    material: bool = True
 
 
 class SchedulePayload(ApiModel):
     data_date: date
+    network_complete: bool = False
     activities: list[ScheduleActivity] = Field(min_length=1)
+    calendars: list[ScheduleCalendar] = Field(default_factory=list)
     dependencies: list[ScheduleDependency] = Field(default_factory=list)
+    constraints: list[ScheduleConstraint] = Field(default_factory=list)
     milestones: list[ScheduleMilestone] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -207,11 +242,69 @@ class SchedulePayload(ApiModel):
         if len(codes) != len(set(codes)):
             raise ValueError("Schedule activity codes must be unique")
         known = set(codes)
+        calendar_ids = [calendar.calendar_id for calendar in self.calendars]
+        if len(calendar_ids) != len(set(calendar_ids)):
+            raise ValueError("Schedule calendar IDs must be unique")
+        known_calendars = {"PROJECT", *calendar_ids}
+        if any(activity.calendar_id not in known_calendars for activity in self.activities):
+            raise ValueError("Schedule activity references an unknown calendar")
         for dependency in self.dependencies:
             if dependency.predecessor_code not in known or dependency.successor_code not in known:
                 raise ValueError("Schedule dependency must reference known activity codes")
             if dependency.predecessor_code == dependency.successor_code:
                 raise ValueError("Schedule activity cannot depend on itself")
+        adjacency = {code: [] for code in codes}
+        for dependency in self.dependencies:
+            adjacency[dependency.predecessor_code].append(dependency.successor_code)
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(code: str) -> None:
+            if code in visiting:
+                raise ValueError("Schedule dependency network must be acyclic")
+            if code in visited:
+                return
+            visiting.add(code)
+            for successor in adjacency[code]:
+                visit(successor)
+            visiting.remove(code)
+            visited.add(code)
+
+        for code in codes:
+            visit(code)
+        if any(constraint.activity_code not in known for constraint in self.constraints):
+            raise ValueError("Schedule constraint references an unknown activity")
+        by_code = {activity.code: activity for activity in self.activities}
+        for constraint in self.constraints:
+            activity = by_code[constraint.activity_code]
+            invalid = (
+                (
+                    constraint.constraint_type == ScheduleConstraintType.START_NO_EARLIER_THAN
+                    and activity.planned_start < constraint.constraint_date
+                )
+                or (
+                    constraint.constraint_type == ScheduleConstraintType.FINISH_NO_LATER_THAN
+                    and activity.planned_finish > constraint.constraint_date
+                )
+                or (
+                    constraint.constraint_type == ScheduleConstraintType.MUST_START_ON
+                    and activity.planned_start != constraint.constraint_date
+                )
+                or (
+                    constraint.constraint_type == ScheduleConstraintType.MUST_FINISH_ON
+                    and activity.planned_finish != constraint.constraint_date
+                )
+            )
+            if invalid:
+                raise ValueError("Schedule activity dates violate a declared constraint")
+        milestone_codes = [milestone.code for milestone in self.milestones]
+        if len(milestone_codes) != len(set(milestone_codes)):
+            raise ValueError("Schedule milestone codes must be unique")
+        if any(
+            milestone.activity_code is not None and milestone.activity_code not in known
+            for milestone in self.milestones
+        ):
+            raise ValueError("Schedule milestone references an unknown activity")
         return self
 
 
@@ -219,6 +312,22 @@ class BudgetPayload(ApiModel):
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     approved_budget: Decimal = Field(ge=0)
     authorized_changes: Decimal = Decimal("0")
+    data_date: date | None = None
+    reporting_period_start: date | None = None
+    reporting_period_end: date | None = None
+    controlled_object_code: str | None = Field(default=None, min_length=1, max_length=80)
+    measurement_basis: str = Field(default="COST_VALUE", min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def valid_reporting_period(self) -> BudgetPayload:
+        if (self.reporting_period_start is None) != (self.reporting_period_end is None):
+            raise ValueError("Budget reporting period requires both start and end")
+        if (
+            self.reporting_period_start is not None
+            and self.reporting_period_end < self.reporting_period_start
+        ):
+            raise ValueError("Budget reporting period end must not precede start")
+        return self
 
 
 class BoqItem(ApiModel):

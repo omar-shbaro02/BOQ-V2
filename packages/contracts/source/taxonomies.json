@@ -97,6 +97,99 @@
     "DeviationDirection": ["AHEAD", "ON_PLAN", "BEHIND"],
     "TrendPersistence": ["TRANSIENT", "PERSISTENT"],
     "TrendDirection": ["FIRST_OBSERVATION", "DETERIORATING", "STABLE", "RECOVERING"],
+    "ScheduleDependencyType": [
+      "FINISH_TO_START",
+      "START_TO_START",
+      "FINISH_TO_FINISH",
+      "START_TO_FINISH"
+    ],
+    "ScheduleConstraintType": [
+      "START_NO_EARLIER_THAN",
+      "FINISH_NO_LATER_THAN",
+      "MUST_START_ON",
+      "MUST_FINISH_ON"
+    ],
+    "ScheduleQualityStatus": ["VALID", "VALID_WITH_LIMITATIONS"],
+    "ScheduleAssessmentStatus": ["ASSESSED", "VERIFICATION_REQUIRED", "INSUFFICIENT"],
+    "ScheduleTimingDirection": ["AHEAD", "ON_TIME", "DELAYED"],
+    "FloatSource": ["SUPPLIED", "CALCULATED", "UNAVAILABLE"],
+    "ScheduleExposureLevel": ["LOCAL", "DOWNSTREAM", "MILESTONE", "PROJECT_COMPLETION"],
+    "ScheduleConclusion": ["LOCAL_TIMING_VARIANCE", "DOWNSTREAM_EXPOSURE", "MILESTONE_EXPOSURE"],
+    "CostRecordKind": [
+      "APPROVED_BUDGET",
+      "AUTHORIZED_CHANGE",
+      "COMMITMENT",
+      "ACTUAL",
+      "ACCRUAL",
+      "BOQ_VALUE",
+      "EARNED_VALUE",
+      "PHYSICAL_VALUE"
+    ],
+    "CommercialEffectType": [
+      "NONE",
+      "TIMING",
+      "PROCUREMENT",
+      "PREPAYMENT",
+      "RETENTION",
+      "MOBILIZATION"
+    ],
+    "CostAlignmentStatus": [
+      "ALIGNED",
+      "COST_AHEAD",
+      "COST_BEHIND",
+      "NOT_COMPARABLE",
+      "VERIFICATION_REQUIRED"
+    ],
+    "CostAssessmentStatus": ["ASSESSED", "VERIFICATION_REQUIRED", "INSUFFICIENT"],
+    "CostForecastStatus": ["CALCULATED", "NOT_SUPPORTED"],
+    "CostConclusion": [
+      "COST_ONLY_VARIANCE",
+      "EXPLAINED_DIVERGENCE",
+      "FORECAST_EXPOSURE"
+    ],
+    "ForecastTarget": [
+      "PRODUCTION_COMPLETION_DATE",
+      "SCHEDULE_COMPLETION_DATE",
+      "ESTIMATE_AT_COMPLETION"
+    ],
+    "ForecastScenarioType": [
+      "CONTINUED_PERFORMANCE",
+      "ACTIVE_RESPONSE",
+      "HYPOTHETICAL"
+    ],
+    "ForecastMethod": [
+      "LINEAR_PRODUCTION_RATE",
+      "SCHEDULE_DELAY_PROPAGATION",
+      "COST_PERFORMANCE_INDEX"
+    ],
+    "ForecastStatus": ["CALCULATED", "LIMITED"],
+    "ForecastValidity": ["CURRENT", "EXPIRED", "RECALCULATION_REQUIRED"],
+    "ForecastRecalculationTrigger": [
+      "INPUT_CHANGED",
+      "NEW_SNAPSHOT",
+      "ACTIVE_RESPONSE_CHANGED",
+      "POLICY_CHANGED",
+      "VALID_UNTIL_REACHED",
+      "MANUAL"
+    ],
+    "ConsequenceType": [
+      "DOWNSTREAM_WORK",
+      "MATERIAL_MILESTONE",
+      "PROJECT_COMPLETION",
+      "COST_EXPOSURE",
+      "COMMERCIAL_EXPOSURE",
+      "RECOVERY_OPTION"
+    ],
+    "ConsequenceSeverity": ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "ImpactAssessmentStatus": ["ASSESSED", "LIMITED", "VERIFICATION_REQUIRED"],
+    "PriorityBand": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "DecisionClockType": [
+      "CONSEQUENCE",
+      "VERIFICATION",
+      "APPROVAL",
+      "MOBILIZATION",
+      "RECOVERY_WINDOW"
+    ],
     "UrgencyLevel": ["NONE", "ROUTINE", "ELEVATED", "URGENT", "IMMEDIATE"],
     "SpecialistKind": [
       "EVIDENCE_PROGRESS",
@@ -200,7 +293,12 @@
       "CASE_RESUMED",
       "CASE_CLOSED",
       "CASE_REOPENED",
-      "PROGRESS_EVALUATED"
+      "PROGRESS_EVALUATED",
+      "SCHEDULE_ASSESSED",
+      "COST_ASSESSED",
+      "FORECAST_CREATED",
+      "CONFIDENCE_OVERRIDE_APPROVED",
+      "IMPACT_ASSESSED"
     ],
     "CaseReopenTrigger": [
       "NEW_MATERIAL_EVIDENCE",

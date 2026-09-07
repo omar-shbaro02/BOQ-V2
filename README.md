@@ -60,6 +60,12 @@ Open `/cases` after accepting a correlation to assemble case evidence, freeze im
 
 Open `/progress` to normalize evidence-backed planned, reported, executed, verified, and accepted/released measurements without collapsing their semantics. Progress evaluation remains inside `/cases`, where compatible bases can be compared against the frozen authorized plan with visible threshold, productivity, trend, persistence, truth, confidence, and formula lineage.
 
+Open `/schedule` to inspect the current authorized network, calendars, constraints, dependency logic, milestones, float, and schedule-quality policies. Schedule assessment remains inside `/cases`, where delay evidence is traced through the exact frozen authorized version and unsupported downstream conclusions stop at local timing variance.
+
+Open `/cost` to inspect the effective authorized budget, normalize evidence-backed commitments, actuals, accruals, BOQ value, earned value, and physical value by reporting period, and review the visible cost policy. Cost assessment remains inside `/cases`, where only compatible currency, scope, period, and basis are reconciled; timing, procurement, prepayment, retention, and mobilization explanations never assert contractual liability.
+
+Open `/forecast` to inspect immutable production, schedule, and cost projection history with point/range results, assumptions, horizons, confidence decay, validity, and recalculation state. Forecast creation remains inside `/cases`; continued-performance and authorized-response projections use `FORECAST`, while hypothetical branches use `SCENARIO` and never alter factual or authorized state.
+
 ## First release boundary
 
 The MVP runs in shadow/advisory mode for one active project and 5–10 meaningful work packages. It ingests controlled project context and evidence, constructs and evaluates Decision Cases, shows reasoning and confidence, recommends a disposition, records a separate human decision, and monitors outcomes. It has no autonomous execution authority.

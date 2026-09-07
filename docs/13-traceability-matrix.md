@@ -31,9 +31,9 @@ This matrix proves that every frozen methodology stage has an implementation and
 - [x] Signals distinct from cases; screening, dedupe, correlation, cross-cutting linkage
 - [x] Decision Case lifecycle, snapshots, readiness, blocked/closed/reopened states
 - [x] Reported/executed/verified/accepted progress and measurement bases
-- [ ] Schedule dependencies, milestones, optional float, and baseline validity
-- [ ] Cost, commitments, actuals, BOQ/earned basis, authorized changes, and commercial boundary
-- [ ] Bounded/versioned forecasts, scenarios, assumptions, horizons, and confidence decay
+- [x] Schedule dependencies, milestones, optional float, and baseline validity
+- [x] Cost, commitments, actuals, BOQ/earned basis, authorized changes, and commercial boundary
+- [x] Bounded/versioned forecasts, scenarios, assumptions, horizons, and confidence decay
 - [ ] Consequence paths, confidence propagation, multi-clock urgency, and priority
 - [ ] Five dispositions with monitoring triggers/evidence requests and explanations
 - [ ] Five bounded specialist responsibilities and orchestrator failure/contradiction behavior

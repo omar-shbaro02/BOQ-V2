@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-05
+Last updated: 2026-09-07
 
 ## Completed phases
 
@@ -184,14 +184,114 @@ Verification evidence:
 
 Phase boundary: Phase 5 establishes current progress truth and deviation persistence. It does not infer schedule dependency consequences, forecast completion, diagnose root cause, recommend a disposition, or record a human decision.
 
+### Phase 6 — Schedule and dependency intelligence
+
+Status: **complete**.
+
+Delivered:
+
+- Typed schedule calendars, activity calendar references, constraints, four dependency relation types, milestones, controlled-object mappings, network-completeness declaration, and optional supplied total float.
+- Schedule source validation for unique activities/calendars/milestones, known references, acyclic dependency graphs, valid constraints, valid dates, and valid custom working calendars before authorization.
+- Current and historical authorized schedule-network projection; baseline or proposed sources are never presented as authorized.
+- Snapshot-bound schedule assessment resolving the exact schedule version effective at the case data date.
+- Evidence-backed activity delay with controlled-object scope, day units, observed/verified semantic-state gates, source truth/confidence lineage, and snapshot containment.
+- Deterministic calendar-aware logic slack and float calculation where supplied float is unavailable and policy permits calculation.
+- Explicit downstream activity paths, residual delay after available slack, affected activities, material milestone exposure, and project-completion exposure.
+- Timing direction, exposure level, schedule quality, assessment status, and maximum supported schedule conclusion stored separately.
+- Visible default schedule-quality policy plus immutable project policy versions for timing tolerance, schedule freshness, dependency requirement, and calculated-float permission.
+- Exact limitations for stale/future schedule data dates, unconfirmed network completeness, activity/object mapping gaps, logic/date inconsistency, unavailable float, weak delay evidence, and unresolved contradiction.
+- `INSUFFICIENT` or `VERIFICATION_REQUIRED` assessments restrict the maximum conclusion to local timing variance rather than implying unsupported downstream consequence.
+- Append-only, idempotent schedule assessments with request hashing, formula version, optimistic case versioning, audit/ledger records, and the latest assessment pointer on the Decision Case.
+- Browser Schedule Intelligence network/policy workbench and Decision Case schedule panel with path, float, milestone, quality, truth, confidence, and limitation visibility.
+- Shared Python/TypeScript schedule relationship, constraint, quality, assessment, timing, float, exposure, and conclusion taxonomies.
+
+Verification evidence:
+
+- 51 API/domain/integration tests passed, including cyclic-network and constraint rejection, custom calendars, schedule network projection, large-delay float absorption, smaller-delay milestone exposure, explicit path lineage, weak/stale/incomplete schedule restrictions, custom policy replay, idempotency, and approved-change comparison against the newly effective authorized version.
+- Live PostgreSQL `0006_progress_intelligence → 0007_schedule_intelligence → 0006_progress_intelligence → 0007_schedule_intelligence` migration rehearsal passed.
+- Two Phase 6 tables and two append-only triggers were verified after re-upgrade.
+- Live PostgreSQL API smoke passed from a validated authorized network and verified delay through a three-day material-milestone exposure with the exact `A-SOURCE → B-MILESTONE` path.
+- Direct PostgreSQL attempts to mutate a schedule policy or assessment were rejected by database triggers.
+- Generated-contract freshness, Ruff, Python formatting/compilation, ESLint, strict TypeScript, and the Next.js production build passed with the `/schedule` and enhanced `/cases` routes.
+
+Phase boundary: Phase 6 calculates deterministic exposure through authorized schedule logic. It does not forecast future production, assert root cause or contractual liability, recommend a management disposition, or alter the schedule.
+
+### Phase 7 — Cost and commercial intelligence
+
+Status: **complete**.
+
+Delivered:
+
+- Expanded authorized-budget contracts with data date, reporting period, controlled-object scope, measurement basis, approved budget, authorized changes, and derived current authorized budget while retaining backward compatibility.
+- Immutable evidence-backed cost records for approved budget, authorized change, commitment, actual, accrual, BOQ value, earned value, and physical value with exact amount, currency, scope, period, basis, semantic state, truth, confidence, evidence, and authorization lineage.
+- Current and historical authorized-budget projection; baseline, proposed, or unactivated budget sources are never presented as authorized.
+- Snapshot-bound, idempotent cost assessments using the budget version effective at the case data date and optimistic Decision Case version checks.
+- Strict compatibility gates for currency, controlled-object scope, reporting period, measurement basis, snapshot containment, and budget authorization version.
+- Separate commitments, actuals, accruals, recognized cost, earned/physical value, cost-consumption ratio, progress-value ratio, alignment variance, and unexplained variance.
+- Deterministic forecast-to-complete and EAC only after the minimum earned threshold and only from sufficiently strong recognized-cost and earned-value evidence.
+- Forecast suppression when commercial timing effects remain unadjusted, preventing prepayment or mobilization timing from becoming a naive overrun forecast.
+- Evidence-backed timing, procurement, prepayment, retention, and mobilization explanations with a stored non-liability boundary on every effect.
+- `COST_AHEAD`, `COST_BEHIND`, `ALIGNED`, `NOT_COMPARABLE`, and `VERIFICATION_REQUIRED` outcomes that do not imply intervention merely from unlike percentages.
+- Exact limitations for zero budget, missing progress/value basis, unsupported physical ratio, multiple value bases, weak evidence, unresolved contradiction, and unsupported forecast inputs.
+- Visible default cost policy plus immutable project policy versions for alignment tolerance, minimum earned ratio, and accrual recognition.
+- Append-only cost policies, records, and assessments, with case ledger/audit records and the latest cost assessment referenced by—but not merged into—the Decision Case.
+- Browser Cost Intelligence workbench and Decision Case cost panel showing authorization, lineage, alignment, explained effects, EAC/FTC, truth, confidence, and limitations.
+- Shared Python/TypeScript cost-record, commercial-effect, alignment, assessment, forecast, and conclusion taxonomies.
+
+Verification evidence:
+
+- 55 API/domain/integration tests passed, including cost-only insufficiency, exact authorized-budget projection, authorized BOQ revision/value lineage, misleading prepayment divergence, EAC/FTC calculation, policy versioning, idempotency, and incompatible-currency rejection.
+- Live PostgreSQL `0007_schedule_intelligence → 0008_cost_commercial → 0007_schedule_intelligence → 0008_cost_commercial` migration rehearsal passed.
+- Three Phase 7 tables and three append-only triggers were verified after re-upgrade.
+- A direct PostgreSQL attempt to mutate a cost policy was rejected by the append-only trigger and the smoke-test transaction left no record behind.
+- Generated-contract freshness, Ruff, Python formatting/compilation, ESLint, and strict TypeScript passed with the `/cost` and enhanced `/cases` routes.
+
+Phase boundary: Phase 7 provides current cost/commercial alignment and a bounded deterministic EAC where evidence supports it. It does not produce multi-domain future scenarios, assert root cause or contractual liability, recommend a management disposition, approve spend/change, or record a human decision.
+
+### Phase 8 — Forecast and scenarios
+
+Status: **complete**.
+
+Delivered:
+
+- One immutable snapshot-bound forecast contract for production completion, schedule completion, and estimate at completion.
+- Deterministic linear production-rate, schedule-delay propagation, and cost-performance-index methods with explicit formula versions and exact upstream specialist-result lineage.
+- Point, lower, and upper results with target-specific units; rate ranges use visible low/high productivity factors and cost ranges use visible low/high cost factors.
+- Explicit data date, horizon end, horizon duration, assumptions, scenario parameters, limitations, source evidence, and recalculation triggers on every projection.
+- Strictly separated `CONTINUED_PERFORMANCE`, `ACTIVE_RESPONSE`, and `HYPOTHETICAL` branches.
+- Active-response projections require an authorized active response frozen into the same case snapshot and use only the target-specific quantitative parameter from its recorded details.
+- Hypothetical projections require an explicit assumption and the single target-compatible parameter; they are stored as `SCENARIO`, never `FORECAST` or authorized state.
+- Continued-performance and active-response projections are stored as `FORECAST`; every projected result is truth-labelled `SCENARIO_ESTIMATE`, never fact, baseline, actual, or authorization.
+- Confidence capped by the upstream specialist output and decayed through the selected horizon under an immutable visible policy with a configured floor.
+- Forecast validity projection returning `CURRENT`, `EXPIRED`, or `RECALCULATION_REQUIRED` without rewriting prior forecast rows.
+- Automatic recalculation detection for newer snapshots, changed upstream progress/schedule/cost results, expired validity, and changed active-response state.
+- Append-only forecast policies and forecast history with case versioning, idempotent request hashing, audit/case-ledger entries, and a latest-projection pointer that does not merge forecast into case truth.
+- Forecast policy and history APIs with target/scenario filtering and a browser Forecast & Scenarios workbench.
+- Decision Case forecast panel for target, specialist input, branch, authorized response, hypothetical parameter, assumptions, horizon, and policy selection.
+- Shared Python/TypeScript target, scenario, method, status, validity, and recalculation-trigger taxonomies.
+
+Verification evidence:
+
+- 56 API/domain/integration tests passed, including reproducible/idempotent production forecasts, ordered ranges, horizon confidence decay, active-response acceleration, hypothetical scenario separation, custom policy selection, full version history, changed-snapshot recalculation, schedule completion projection, and versioned cost EAC range.
+- Live PostgreSQL `0008_cost_commercial → 0009_forecast_scenarios → 0008_cost_commercial → 0009_forecast_scenarios` migration rehearsal passed.
+- Two Phase 8 tables and two append-only triggers were verified after re-upgrade.
+- A direct PostgreSQL attempt to mutate a forecast policy was rejected by the append-only trigger and the smoke-test transaction left no record behind.
+- Generated-contract freshness, Ruff, Python formatting/compilation, ESLint, and strict TypeScript passed with the `/forecast` and enhanced `/cases` routes.
+
+Phase boundary: Phase 8 projects bounded results under explicit methods and assumptions. It does not convert projections into authorized schedules/budgets, assert cause or consequence severity, prioritize cases, recommend a disposition, approve a response, or record a human decision.
+
+## Remaining delivery count
+
+The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `8` are complete, leaving **6 phases** (`9` through `14`).
+
 ## Next phase
 
-Phase 6 — Schedule and dependency intelligence.
+Phase 9 — Consequence, confidence, urgency, and priority.
 
 Next implementation order:
 
-1. Parse and validate minimal activity networks, calendars, constraints, dependencies, milestones, and supplied/calculable float.
-2. Resolve the schedule version effective at each case data date and calculate activity/milestone timing variance.
-3. Trace credible downstream paths and distinguish isolated delay from consequential delay.
-4. Surface schedule-quality and missing-dependency limitations without inventing unsupported logic.
-5. Add schedule intelligence to Decision Cases and cover schedule-only and approved-change scenarios.
+1. Build evidence-backed consequence paths across schedule, milestones, completion, cost, commercial exposure, and recovery options.
+2. Calculate separate truth, forecast, consequence, and aggregate confidence with upstream ceilings and override governance.
+3. Model consequence, verification, approval, mobilization, and recovery-window clocks independently.
+4. Apply a transparent priority policy with cross-cutting reach and active-response awareness.
+5. Keep variance/status, consequence, confidence, urgency, and priority stored and displayed as independent dimensions.

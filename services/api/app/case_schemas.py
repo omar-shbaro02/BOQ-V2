@@ -45,6 +45,10 @@ class DecisionCaseRead(CaseApiModel):
     blocker_description: str | None
     last_snapshot_id: uuid.UUID | None
     last_progress_evaluation_id: uuid.UUID | None
+    last_schedule_assessment_id: uuid.UUID | None
+    last_cost_assessment_id: uuid.UUID | None
+    last_forecast_projection_id: uuid.UUID | None
+    last_impact_assessment_id: uuid.UUID | None
     outcome_reference: str | None
     close_reason: str | None
     closed_at: datetime | None

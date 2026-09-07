@@ -44,6 +44,81 @@ export type TrendPersistence = (typeof TrendPersistenceValues)[number];
 export const TrendDirectionValues = ["FIRST_OBSERVATION", "DETERIORATING", "STABLE", "RECOVERING"] as const;
 export type TrendDirection = (typeof TrendDirectionValues)[number];
 
+export const ScheduleDependencyTypeValues = ["FINISH_TO_START", "START_TO_START", "FINISH_TO_FINISH", "START_TO_FINISH"] as const;
+export type ScheduleDependencyType = (typeof ScheduleDependencyTypeValues)[number];
+
+export const ScheduleConstraintTypeValues = ["START_NO_EARLIER_THAN", "FINISH_NO_LATER_THAN", "MUST_START_ON", "MUST_FINISH_ON"] as const;
+export type ScheduleConstraintType = (typeof ScheduleConstraintTypeValues)[number];
+
+export const ScheduleQualityStatusValues = ["VALID", "VALID_WITH_LIMITATIONS"] as const;
+export type ScheduleQualityStatus = (typeof ScheduleQualityStatusValues)[number];
+
+export const ScheduleAssessmentStatusValues = ["ASSESSED", "VERIFICATION_REQUIRED", "INSUFFICIENT"] as const;
+export type ScheduleAssessmentStatus = (typeof ScheduleAssessmentStatusValues)[number];
+
+export const ScheduleTimingDirectionValues = ["AHEAD", "ON_TIME", "DELAYED"] as const;
+export type ScheduleTimingDirection = (typeof ScheduleTimingDirectionValues)[number];
+
+export const FloatSourceValues = ["SUPPLIED", "CALCULATED", "UNAVAILABLE"] as const;
+export type FloatSource = (typeof FloatSourceValues)[number];
+
+export const ScheduleExposureLevelValues = ["LOCAL", "DOWNSTREAM", "MILESTONE", "PROJECT_COMPLETION"] as const;
+export type ScheduleExposureLevel = (typeof ScheduleExposureLevelValues)[number];
+
+export const ScheduleConclusionValues = ["LOCAL_TIMING_VARIANCE", "DOWNSTREAM_EXPOSURE", "MILESTONE_EXPOSURE"] as const;
+export type ScheduleConclusion = (typeof ScheduleConclusionValues)[number];
+
+export const CostRecordKindValues = ["APPROVED_BUDGET", "AUTHORIZED_CHANGE", "COMMITMENT", "ACTUAL", "ACCRUAL", "BOQ_VALUE", "EARNED_VALUE", "PHYSICAL_VALUE"] as const;
+export type CostRecordKind = (typeof CostRecordKindValues)[number];
+
+export const CommercialEffectTypeValues = ["NONE", "TIMING", "PROCUREMENT", "PREPAYMENT", "RETENTION", "MOBILIZATION"] as const;
+export type CommercialEffectType = (typeof CommercialEffectTypeValues)[number];
+
+export const CostAlignmentStatusValues = ["ALIGNED", "COST_AHEAD", "COST_BEHIND", "NOT_COMPARABLE", "VERIFICATION_REQUIRED"] as const;
+export type CostAlignmentStatus = (typeof CostAlignmentStatusValues)[number];
+
+export const CostAssessmentStatusValues = ["ASSESSED", "VERIFICATION_REQUIRED", "INSUFFICIENT"] as const;
+export type CostAssessmentStatus = (typeof CostAssessmentStatusValues)[number];
+
+export const CostForecastStatusValues = ["CALCULATED", "NOT_SUPPORTED"] as const;
+export type CostForecastStatus = (typeof CostForecastStatusValues)[number];
+
+export const CostConclusionValues = ["COST_ONLY_VARIANCE", "EXPLAINED_DIVERGENCE", "FORECAST_EXPOSURE"] as const;
+export type CostConclusion = (typeof CostConclusionValues)[number];
+
+export const ForecastTargetValues = ["PRODUCTION_COMPLETION_DATE", "SCHEDULE_COMPLETION_DATE", "ESTIMATE_AT_COMPLETION"] as const;
+export type ForecastTarget = (typeof ForecastTargetValues)[number];
+
+export const ForecastScenarioTypeValues = ["CONTINUED_PERFORMANCE", "ACTIVE_RESPONSE", "HYPOTHETICAL"] as const;
+export type ForecastScenarioType = (typeof ForecastScenarioTypeValues)[number];
+
+export const ForecastMethodValues = ["LINEAR_PRODUCTION_RATE", "SCHEDULE_DELAY_PROPAGATION", "COST_PERFORMANCE_INDEX"] as const;
+export type ForecastMethod = (typeof ForecastMethodValues)[number];
+
+export const ForecastStatusValues = ["CALCULATED", "LIMITED"] as const;
+export type ForecastStatus = (typeof ForecastStatusValues)[number];
+
+export const ForecastValidityValues = ["CURRENT", "EXPIRED", "RECALCULATION_REQUIRED"] as const;
+export type ForecastValidity = (typeof ForecastValidityValues)[number];
+
+export const ForecastRecalculationTriggerValues = ["INPUT_CHANGED", "NEW_SNAPSHOT", "ACTIVE_RESPONSE_CHANGED", "POLICY_CHANGED", "VALID_UNTIL_REACHED", "MANUAL"] as const;
+export type ForecastRecalculationTrigger = (typeof ForecastRecalculationTriggerValues)[number];
+
+export const ConsequenceTypeValues = ["DOWNSTREAM_WORK", "MATERIAL_MILESTONE", "PROJECT_COMPLETION", "COST_EXPOSURE", "COMMERCIAL_EXPOSURE", "RECOVERY_OPTION"] as const;
+export type ConsequenceType = (typeof ConsequenceTypeValues)[number];
+
+export const ConsequenceSeverityValues = ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+export type ConsequenceSeverity = (typeof ConsequenceSeverityValues)[number];
+
+export const ImpactAssessmentStatusValues = ["ASSESSED", "LIMITED", "VERIFICATION_REQUIRED"] as const;
+export type ImpactAssessmentStatus = (typeof ImpactAssessmentStatusValues)[number];
+
+export const PriorityBandValues = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+export type PriorityBand = (typeof PriorityBandValues)[number];
+
+export const DecisionClockTypeValues = ["CONSEQUENCE", "VERIFICATION", "APPROVAL", "MOBILIZATION", "RECOVERY_WINDOW"] as const;
+export type DecisionClockType = (typeof DecisionClockTypeValues)[number];
+
 export const UrgencyLevelValues = ["NONE", "ROUTINE", "ELEVATED", "URGENT", "IMMEDIATE"] as const;
 export type UrgencyLevel = (typeof UrgencyLevelValues)[number];
 
@@ -119,7 +194,7 @@ export type LimitationCode = (typeof LimitationCodeValues)[number];
 export const ActiveResponseStatusValues = ["ACTIVE", "COMPLETED", "FAILED", "CANCELLED"] as const;
 export type ActiveResponseStatus = (typeof ActiveResponseStatusValues)[number];
 
-export const CaseLedgerEventTypeValues = ["CASE_OPENED", "EVIDENCE_ATTACHED", "RESPONSE_LINKED", "SNAPSHOT_CREATED", "BASELINE_CHALLENGED", "SUFFICIENCY_ASSESSED", "LIMITATION_RESOLVED", "LIFECYCLE_TRANSITIONED", "CASE_BLOCKED", "CASE_RESUMED", "CASE_CLOSED", "CASE_REOPENED", "PROGRESS_EVALUATED"] as const;
+export const CaseLedgerEventTypeValues = ["CASE_OPENED", "EVIDENCE_ATTACHED", "RESPONSE_LINKED", "SNAPSHOT_CREATED", "BASELINE_CHALLENGED", "SUFFICIENCY_ASSESSED", "LIMITATION_RESOLVED", "LIFECYCLE_TRANSITIONED", "CASE_BLOCKED", "CASE_RESUMED", "CASE_CLOSED", "CASE_REOPENED", "PROGRESS_EVALUATED", "SCHEDULE_ASSESSED", "COST_ASSESSED", "FORECAST_CREATED", "CONFIDENCE_OVERRIDE_APPROVED", "IMPACT_ASSESSED"] as const;
 export type CaseLedgerEventType = (typeof CaseLedgerEventTypeValues)[number];
 
 export const CaseReopenTriggerValues = ["NEW_MATERIAL_EVIDENCE", "FORECAST_EXPIRED", "RESPONSE_FAILED", "CONSEQUENCE_RENEWED", "ADMINISTRATIVE_CORRECTION"] as const;
