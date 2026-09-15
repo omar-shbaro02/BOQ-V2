@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
 from app.auth import ActorContext
+from app.confidence import impact_confidence
 from app.generated.taxonomies import (
     CaseLedgerEventType,
     CaseLifecycle,
@@ -41,12 +42,13 @@ from app.models import (
 from app.services.audit import record_audit
 from app.services.cases import add_ledger, audit_case, require_version, scoped_case
 from app.services.forecast import validity_for
+from app.services.recovery import qualify_recovery
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 DEFAULT_POLICY_VERSION = "IMPACT-DEFAULT-1.0.0"
-FORMULA_VERSION = "IMPACT-PRIORITY-1.0.0"
+FORMULA_VERSION = "IMPACT-PRIORITY-1.0.3"
 DEFAULT_POLICY = {
     "id": None,
     "organization_id": None,
@@ -292,6 +294,7 @@ def create_impact_assessment(
         "Cost",
     )
     forecasts: list[ForecastProjection] = []
+    forecast_sources: dict[tuple[str, uuid.UUID], Any] = {}
     for identifier in data.forecast_projection_ids:
         forecast = session.get(ForecastProjection, identifier)
         if (
@@ -301,6 +304,22 @@ def create_impact_assessment(
             or forecast.controlled_object_id != data.controlled_object_id
         ):
             raise HTTPException(status_code=422, detail="Forecast input is outside this snapshot")
+        for label, model, identifier in (
+            ("PROGRESS", ProgressEvaluation, forecast.progress_evaluation_id),
+            ("SCHEDULE", ScheduleAssessment, forecast.schedule_assessment_id),
+            ("COST", CostAssessment, forecast.cost_assessment_id),
+        ):
+            source = _specialist_input(
+                session,
+                model,
+                identifier,
+                case.id,
+                snapshot.id,
+                data.controlled_object_id,
+                f"Forecast {label}",
+            )
+            if source is not None:
+                forecast_sources[(label, source.id)] = source
         forecasts.append(forecast)
 
     policy = resolve_policy(session, project, data.policy_version)
@@ -319,20 +338,23 @@ def create_impact_assessment(
             }
         )
         severity = ConsequenceSeverity.LOW
-    if schedule:
+    if schedule and schedule.assessment_status == "ASSESSED":
         for path in schedule.downstream_paths:
             paths.append(
                 {"type": ConsequenceType.DOWNSTREAM_WORK.value, "source": "SCHEDULE", **path}
             )
-        if schedule.downstream_paths:
+        if any(Decimal(path["residual_delay_days"]) > 0 for path in schedule.downstream_paths):
             severity = max((severity, ConsequenceSeverity.MEDIUM), key=_severity_rank)
         for exposure in schedule.milestone_exposures:
             paths.append(
                 {"type": ConsequenceType.MATERIAL_MILESTONE.value, "source": "SCHEDULE", **exposure}
             )
-        if schedule.milestone_exposures:
+        if any(item.get("material", True) for item in schedule.milestone_exposures):
             severity = ConsequenceSeverity.CRITICAL
-        if schedule.project_completion_exposure_days is not None:
+        if (
+            schedule.project_completion_exposure_days is not None
+            and schedule.project_completion_exposure_days > 0
+        ):
             paths.append(
                 {
                     "type": ConsequenceType.PROJECT_COMPLETION.value,
@@ -342,7 +364,12 @@ def create_impact_assessment(
             )
             severity = max((severity, ConsequenceSeverity.HIGH), key=_severity_rank)
     cost_ratio = Decimal("0")
-    if cost and cost.estimate_at_completion is not None and cost.current_authorized_budget > 0:
+    if (
+        cost
+        and cost.assessment_status == "ASSESSED"
+        and cost.estimate_at_completion is not None
+        and cost.current_authorized_budget > 0
+    ):
         exposure = max(Decimal("0"), cost.estimate_at_completion - cost.current_authorized_budget)
         cost_ratio = exposure / cost.current_authorized_budget
         if exposure > 0:
@@ -378,6 +405,7 @@ def create_impact_assessment(
                 }
             )
 
+    forecast_validities = {str(value.id): validity_for(session, value) for value in forecasts}
     for forecast in forecasts:
         paths.append(
             {
@@ -386,6 +414,20 @@ def create_impact_assessment(
                 else ConsequenceType.DOWNSTREAM_WORK.value,
                 "source": "FORECAST",
                 "forecast_id": str(forecast.id),
+                "input_evidence_ids": list(forecast.input_evidence_ids),
+                "source_result_ids": [
+                    str(identifier)
+                    for identifier in (
+                        forecast.progress_evaluation_id,
+                        forecast.schedule_assessment_id,
+                        forecast.cost_assessment_id,
+                    )
+                    if identifier is not None
+                ],
+                "semantic_state": forecast.semantic_state,
+                "truth_type": forecast.truth_type,
+                "assumptions": list(forecast.assumptions),
+                "limitations": list(forecast.limitations),
                 "target": forecast.target,
                 "scenario_type": forecast.scenario_type,
                 "range": [forecast.result_lower, forecast.result_point, forecast.result_upper],
@@ -396,6 +438,13 @@ def create_impact_assessment(
                 else None,
             }
         )
+    # Preserve the exact specialist result and evidence behind every consequence path.
+    sources = {"PROGRESS": progress, "SCHEDULE": schedule, "COST": cost}
+    for path in paths:
+        source = sources.get(path["source"])
+        if source is not None:
+            path["source_result_id"] = str(source.id)
+            path["input_evidence_ids"] = list(source.input_evidence_ids)
     active_responses = (
         list(
             session.scalars(
@@ -410,33 +459,40 @@ def create_impact_assessment(
         if snapshot.active_response_ids
         else []
     )
+    assessed_at = datetime.now(UTC)
+    qualified_response_ids: list[str] = []
     for response in active_responses:
-        if not any(path.get("active_response_id") == str(response.id) for path in paths):
-            paths.append(
-                {
-                    "type": ConsequenceType.RECOVERY_OPTION.value,
-                    "source": "AUTHORIZED_RESPONSE",
-                    "active_response_id": str(response.id),
-                    "authorization_reference": response.authorization_reference,
-                    "status": response.status,
-                    "conclusion_boundary": "Authorized option recorded; outcome is not presumed",
-                }
-            )
+        qualification = qualify_recovery(
+            response, forecasts, forecast_validities, snapshot.data_date, assessed_at
+        )
+        if qualification["qualified"]:
+            qualified_response_ids.append(str(response.id))
+        for path in paths:
+            if path.get("active_response_id") == str(response.id):
+                path["recovery_qualification"] = qualification
+        paths.append(
+            {
+                "type": ConsequenceType.RECOVERY_OPTION.value,
+                "source": "AUTHORIZED_RESPONSE",
+                "active_response_id": str(response.id),
+                "authorization_reference": response.authorization_reference,
+                "status": response.status,
+                "recovery_qualification": qualification,
+                "conclusion_boundary": "Authorized option recorded; outcome is not presumed",
+            }
+        )
 
     confidences: list[Decimal] = []
     evidence_ids: set[str] = set()
     truth_types: list[str] = []
-    for value in (progress, schedule, cost):
+    for value in (progress, schedule, cost, *forecast_sources.values()):
         if value:
             confidences.append(Decimal(str(value.confidence)))
             evidence_ids.update(value.input_evidence_ids)
             truth_types.append(value.truth_type)
-    truth_confidence = min(confidences) if confidences else Decimal("0")
-    forecast_confidence = (
-        min(Decimal(str(value.horizon_confidence)) for value in forecasts)
-        if forecasts
-        else truth_confidence
-    )
+    for forecast in forecasts:
+        confidences.append(Decimal(str(forecast.upstream_confidence)))
+        evidence_ids.update(forecast.input_evidence_ids)
     reliability_values = (
         list(
             session.scalars(
@@ -449,11 +505,16 @@ def create_impact_assessment(
         if evidence_ids
         else []
     )
-    critical_inputs = [*confidences, *(Decimal(str(value)) for value in reliability_values)]
-    upstream_ceiling = min(critical_inputs) if critical_inputs else Decimal("0")
-    consequence_confidence = min(truth_confidence, forecast_confidence) * Decimal("0.90")
-    consequence_confidence = consequence_confidence.quantize(Decimal("0.000001"))
-    overall_confidence = min(consequence_confidence, upstream_ceiling)
+    components = impact_confidence(
+        confidences,
+        [Decimal(str(value.horizon_confidence)) for value in forecasts],
+        [Decimal(str(value)) for value in reliability_values],
+    )
+    truth_confidence = components.truth
+    forecast_confidence = components.forecast
+    consequence_confidence = components.consequence
+    upstream_ceiling = components.upstream_ceiling
+    overall_confidence = components.overall
     override = None
     if data.confidence_override_id:
         override = session.get(ConfidenceOverride, data.confidence_override_id)
@@ -530,7 +591,11 @@ def create_impact_assessment(
     score += Decimal(max(0, reach - 1)) * Decimal(
         str(policy_value(policy, "cross_cutting_bonus_per_object"))
     )
-    if active_responses:
+    response_reduction_applied = bool(qualified_response_ids) and all(
+        not value.limitations and value.truth_type != TruthType.CONTRADICTED
+        for value in (progress, schedule, cost, *forecast_sources.values()) if value is not None
+    ) and all(value == ForecastValidity.CURRENT for value in forecast_validities.values())
+    if response_reduction_applied:
         score -= Decimal(str(policy_value(policy, "active_response_score_reduction")))
     score = min(Decimal("100"), max(Decimal("0"), score)).quantize(Decimal("0.001"))
     if score >= Decimal(str(policy_value(policy, "critical_priority_score"))):
@@ -550,13 +615,72 @@ def create_impact_assessment(
         reason_codes.append("SOURCE_RELIABILITY_APPLIED")
     if reach > 1:
         reason_codes.append("CROSS_CUTTING_REACH")
-    if active_responses:
-        reason_codes.append("ACTIVE_RESPONSE_REDUCTION")
+    if response_reduction_applied:
+        reason_codes.append("QUALIFIED_RECOVERY_REDUCTION")
+    elif active_responses:
+        reason_codes.append("ACTIVE_RESPONSE_NO_PRIORITY_REDUCTION")
     if override:
         reason_codes.append("APPROVED_CONFIDENCE_OVERRIDE")
 
     limitations: list[dict[str, Any]] = []
     assessment_status = ImpactAssessmentStatus.ASSESSED
+    restricted_sources = {
+        (label, value.id): value
+        for label, value in (("SCHEDULE", schedule), ("COST", cost))
+        if value is not None
+    }
+    restricted_sources.update(
+        {key: value for key, value in forecast_sources.items() if key[0] != "PROGRESS"}
+    )
+    for (label, _), value in restricted_sources.items():
+        if value and value.assessment_status != "ASSESSED":
+            assessment_status = ImpactAssessmentStatus.VERIFICATION_REQUIRED
+            limitations.append(
+                {
+                    "code": f"{label}_INPUT_RESTRICTED",
+                    "source_id": str(value.id),
+                    "upstream_status": value.assessment_status,
+                    "upstream_limitations": value.limitations,
+                    "description": "Upstream stop gates prevent supported consequence conclusions",
+                }
+            )
+    for (label, source_id), source in forecast_sources.items():
+        if source.limitations:
+            if assessment_status == ImpactAssessmentStatus.ASSESSED:
+                assessment_status = ImpactAssessmentStatus.LIMITED
+            limitations.append(
+                {
+                    "code": "FORECAST_SOURCE_LIMITATIONS",
+                    "source_type": label,
+                    "source_id": str(source_id),
+                    "upstream_limitations": list(source.limitations),
+                    "description": "Forecast source limitations remain applicable",
+                }
+            )
+    for forecast in forecasts:
+        if forecast.limitations:
+            if assessment_status == ImpactAssessmentStatus.ASSESSED:
+                assessment_status = ImpactAssessmentStatus.LIMITED
+            limitations.append(
+                {
+                    "code": "FORECAST_INPUT_LIMITATIONS",
+                    "forecast_id": str(forecast.id),
+                    "upstream_limitations": list(forecast.limitations),
+                    "description": "Selected forecast limitations remain applicable",
+                }
+            )
+        if forecast.semantic_state == "SCENARIO":
+            if assessment_status == ImpactAssessmentStatus.ASSESSED:
+                assessment_status = ImpactAssessmentStatus.LIMITED
+            limitations.append(
+                {
+                    "code": "HYPOTHETICAL_SCENARIO_INPUT",
+                    "forecast_id": str(forecast.id),
+                    "description": (
+                        "Hypothetical consequences depend on assumptions, not authorization"
+                    ),
+                }
+            )
     if any(value == TruthType.CONTRADICTED for value in truth_types):
         assessment_status = ImpactAssessmentStatus.VERIFICATION_REQUIRED
         limitations.append(
@@ -565,13 +689,14 @@ def create_impact_assessment(
     non_current = [
         str(value.id)
         for value in forecasts
-        if validity_for(session, value) != ForecastValidity.CURRENT
+        if forecast_validities[str(value.id)] != ForecastValidity.CURRENT
     ]
     if non_current:
         assessment_status = ImpactAssessmentStatus.VERIFICATION_REQUIRED
         limitations.append({"code": "FORECAST_RECALCULATION_REQUIRED", "forecast_ids": non_current})
-    if margin is None and assessment_status == ImpactAssessmentStatus.ASSESSED:
-        assessment_status = ImpactAssessmentStatus.LIMITED
+    if margin is None:
+        if assessment_status == ImpactAssessmentStatus.ASSESSED:
+            assessment_status = ImpactAssessmentStatus.LIMITED
         limitations.append(
             {
                 "code": "NO_DECISION_DEADLINE",

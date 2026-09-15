@@ -123,6 +123,7 @@ def progress_evidence(
     semantic_state: str,
     truth_type: str,
     field: str,
+    source_reliability: str | None = None,
 ) -> dict[str, Any]:
     response = client.post(
         f"/api/v1/projects/{project_id}/evidence/items",
@@ -137,6 +138,7 @@ def progress_evidence(
             "truth_type": truth_type,
             "as_of": as_of.isoformat(),
             "confidence": "0.90" if truth_type == "VERIFIED_FACT" else "0.65",
+            "source_reliability": source_reliability,
         },
     )
     assert response.status_code == 201, response.text
@@ -533,6 +535,7 @@ def prepare_production_forecast_case(
     project_id: str,
     headers: dict[str, str],
     object_id: str,
+    source_reliability: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str]:
     current = datetime.now(UTC)
     prior = current - timedelta(days=7)
@@ -560,6 +563,7 @@ def prepare_production_forecast_case(
             semantic_state="CURRENT_AUTHORIZED",
             truth_type="VERIFIED_FACT",
             field=f"planned_progress_quantity_{index}",
+            source_reliability=source_reliability,
         )
         actual_evidence = progress_evidence(
             client,
@@ -572,6 +576,7 @@ def prepare_production_forecast_case(
             semantic_state="VERIFIED",
             truth_type="VERIFIED_FACT",
             field=f"verified_progress_quantity_{index}",
+            source_reliability=source_reliability,
         )
         planned_measurements.append(
             normalize_progress(
@@ -2106,3 +2111,257 @@ def test_production_forecast_branches_ranges_confidence_and_history(
     assert {item["validity"] for item in stale_history.json()} == {"RECALCULATION_REQUIRED"}
     with sessions() as session:
         assert session.scalar(select(func.count(ForecastProjection.id))) == 3
+
+
+@pytest.mark.parametrize("weak, harmless", [(False, False), (True, False), (False, True)])
+def test_impact_preserves_schedule_gates_and_independent_clocks(case_api, weak, harmless):
+    client, _ = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    signal = add_evidence(client, project_id, headers, object_id)
+    delay = schedule_delay_evidence(client, project_id, headers, object_id, delay_days="3")
+    case = open_case(client, project_id, headers, signal, "impact-case")
+    payload = schedule_payload(source_float="20" if harmless else None, successor_gap_days=0)
+    if weak:
+        payload["network_complete"] = False
+    activate_schedule_network(client, project_id, headers, payload)
+    case = attach(client, project_id, headers, case, [delay["id"]])
+    frozen = snapshot(client, project_id, headers, case, "impact-snapshot")
+    upstream = assess_schedule_case(
+        client, project_id, headers, case, frozen, object_id, delay["id"], "impact-schedule"
+    )
+    data_date = datetime.fromisoformat(frozen["snapshot"]["data_date"]).date()
+    body = {
+        "expected_version": upstream["case"]["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "controlled_object_id": object_id,
+        "schedule_assessment_id": upstream["assessment"]["id"],
+        "consequence_date": (data_date + timedelta(days=10)).isoformat(),
+        "verification_duration_days": 2,
+        "approval_duration_days": 3,
+        "mobilization_duration_days": 4,
+    }
+    url = f"/api/v1/projects/{project_id}/decision-cases/{case['id']}/impact-assessments"
+    request_headers = {**headers, "Idempotency-Key": "impact-first"}
+    response = client.post(url, headers=request_headers, json=body)
+    assert response.status_code == 201, response.text
+    result = response.json()["assessment"]
+    assert result["urgency_margin_days"] == 1
+    assert result["response_lead_days"] == 9
+    assert result["urgency"] == "URGENT"
+    assert len(result["decision_clocks"]) == 5
+    assert Decimal(result["overall_confidence"]) <= Decimal(result["upstream_confidence_ceiling"])
+    if weak:
+        assert result["assessment_status"] == "VERIFICATION_REQUIRED"
+        assert result["consequence_severity"] == "NONE"
+        assert any(x["code"] == "SCHEDULE_INPUT_RESTRICTED" for x in result["limitations"])
+    elif harmless:
+        assert result["assessment_status"] == "ASSESSED"
+        assert result["consequence_severity"] == "NONE"
+        assert result["priority_band"] == "LOW"
+    else:
+        assert result["assessment_status"] == "ASSESSED"
+        assert result["consequence_severity"] == "CRITICAL"
+        assert any(x["type"] == "MATERIAL_MILESTONE" for x in result["consequence_paths"])
+    repeated = client.post(url, headers=request_headers, json=body)
+    assert repeated.status_code == 201
+    assert repeated.json()["assessment"]["id"] == result["id"]
+    mismatch = client.post(url, headers=request_headers, json={**body, "approval_duration_days": 1})
+    assert mismatch.status_code == 409
+    stale = client.post(url, headers={**headers, "Idempotency-Key": "stale"}, json=body)
+    assert stale.status_code == 409
+    history = client.get(url, headers=headers)
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    outsider = client.get(url, headers={**headers, "X-VAI-Actor-ID": "outsider"})
+    assert outsider.status_code == 403
+
+    untimed_body = {
+        **body,
+        "expected_version": response.json()["case"]["version"],
+        "consequence_date": None,
+    }
+    untimed = client.post(
+        url, headers={**headers, "Idempotency-Key": "untimed"}, json=untimed_body
+    )
+    assert untimed.status_code == 201, untimed.text
+    untimed_result = untimed.json()["assessment"]
+    assert untimed_result["urgency_margin_days"] is None
+    assert any(x["code"] == "NO_DECISION_DEADLINE" for x in untimed_result["limitations"])
+    assert untimed_result["assessment_status"] == ("VERIFICATION_REQUIRED" if weak else "LIMITED")
+
+
+@pytest.mark.parametrize(
+    "hypothetical, reliability, horizon_days",
+    [(False, None, 60), (True, None, 60), (False, "0.4", 60), (False, None, 1)],
+)
+def test_forecast_only_impact_preserves_confidence_lineage_and_scenario_limits(
+    case_api, hypothetical, reliability, horizon_days
+):
+    client, sessions = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    case, frozen, evaluation, _ = prepare_production_forecast_case(
+        client, sessions, project_id, headers, object_id, reliability
+    )
+    data_date = datetime.fromisoformat(frozen["snapshot"]["data_date"]).date()
+    base_url = f"/api/v1/projects/{project_id}/decision-cases/{case['id']}"
+    body = {
+        "expected_version": case["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "controlled_object_id": object_id,
+        "target": "PRODUCTION_COMPLETION_DATE",
+        "scenario_type": "HYPOTHETICAL" if hypothetical else "CONTINUED_PERFORMANCE",
+        "horizon_end": (data_date + timedelta(days=horizon_days)).isoformat(),
+        "progress_evaluation_id": evaluation["id"],
+        "assumptions": ["Resources remain available throughout the projection horizon"],
+    }
+    if hypothetical:
+        body["scenario_parameters"] = {"productivity_multiplier": "1.5"}
+    projected = client.post(
+        f"{base_url}/forecasts",
+        headers={**headers, "Idempotency-Key": "impact-source-forecast"},
+        json=body,
+    )
+    assert projected.status_code == 201, projected.text
+    forecast = projected.json()["forecast"]
+    impact_body = {
+        "expected_version": projected.json()["case"]["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "controlled_object_id": object_id,
+        "forecast_projection_ids": [forecast["id"]],
+        "consequence_date": (data_date + timedelta(days=30)).isoformat(),
+    }
+    response = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "forecast-only-impact"},
+        json=impact_body,
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()["assessment"]
+    truth_ceiling = min(Decimal(evaluation["confidence"]), Decimal(reliability or "1"))
+    forecast_ceiling = min(Decimal(forecast["horizon_confidence"]), truth_ceiling)
+    assert Decimal(result["truth_confidence"]) == truth_ceiling
+    assert Decimal(result["forecast_confidence"]) == forecast_ceiling
+    assert Decimal(result["upstream_confidence_ceiling"]) == forecast_ceiling
+    if reliability:
+        assert "SOURCE_RELIABILITY_APPLIED" in result["priority_reason_codes"]
+    if forecast["limitations"]:
+        assert result["assessment_status"] == "LIMITED"
+        inherited = next(
+            x for x in result["limitations"] if x["code"] == "FORECAST_INPUT_LIMITATIONS"
+        )
+        assert inherited["upstream_limitations"] == forecast["limitations"]
+    assert Decimal(result["overall_confidence"]) > 0
+    assert Decimal(result["overall_confidence"]) <= Decimal(forecast["horizon_confidence"])
+    path = next(item for item in result["consequence_paths"] if item["source"] == "FORECAST")
+    assert path["source_result_ids"] == [evaluation["id"]]
+    assert path["input_evidence_ids"] == forecast["input_evidence_ids"]
+    assert path["truth_type"] == "SCENARIO_ESTIMATE"
+    assert path["assumptions"] == forecast["assumptions"]
+    if hypothetical:
+        assert result["assessment_status"] == "LIMITED"
+        assert path["semantic_state"] == "SCENARIO"
+        assert any(x["code"] == "HYPOTHETICAL_SCENARIO_INPUT" for x in result["limitations"])
+    # Explicitly including the same upstream result must not double-count confidence.
+    mixed = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "mixed-forecast-impact"},
+        json={
+            **impact_body,
+            "expected_version": response.json()["case"]["version"],
+            "progress_evaluation_id": evaluation["id"],
+        },
+    )
+    assert mixed.status_code == 201, mixed.text
+    assert mixed.json()["assessment"]["overall_confidence"] == result["overall_confidence"]
+
+
+@pytest.mark.parametrize("mode", ["qualified", "no_comparison", "failed", "expired", "no_benefit"])
+def test_recovery_reduction_requires_current_comparable_projected_benefit(case_api, mode):
+    from app.models import CaseActiveResponse
+
+    client, sessions = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    case, frozen, evaluation, response_id = prepare_production_forecast_case(
+        client, sessions, project_id, headers, object_id
+    )
+    if mode == "no_benefit":
+        with sessions() as session:
+            response = session.get(CaseActiveResponse, uuid.UUID(response_id))
+            response.details = {"productivity_multiplier": "0.5"}
+            session.commit()
+    data_date = datetime.fromisoformat(frozen["snapshot"]["data_date"]).date()
+    base_url = f"/api/v1/projects/{project_id}/decision-cases/{case['id']}"
+    payload = {
+        "expected_version": case["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "controlled_object_id": object_id,
+        "target": "PRODUCTION_COMPLETION_DATE",
+        "scenario_type": "CONTINUED_PERFORMANCE",
+        "horizon_end": (data_date + timedelta(days=60)).isoformat(),
+        "progress_evaluation_id": evaluation["id"],
+    }
+    baseline = client.post(
+        f"{base_url}/forecasts", headers={**headers, "Idempotency-Key": "recovery-baseline"},
+        json=payload,
+    )
+    assert baseline.status_code == 201, baseline.text
+    active = client.post(
+        f"{base_url}/forecasts", headers={**headers, "Idempotency-Key": "recovery-active"},
+        json={
+            **payload, "expected_version": baseline.json()["case"]["version"],
+            "scenario_type": "ACTIVE_RESPONSE", "active_response_id": response_id,
+        },
+    )
+    assert active.status_code == 201, active.text
+    # Simulate a subsequently observed response failure or elapsed authorization window.
+    if mode in ("failed", "expired"):
+        with sessions() as session:
+            response = session.get(CaseActiveResponse, uuid.UUID(response_id))
+            if mode == "failed":
+                response.status = "FAILED"
+            else:
+                response.effective_until = datetime.now(UTC) - timedelta(seconds=1)
+            session.commit()
+    ids = [active.json()["forecast"]["id"]]
+    if mode != "no_comparison":
+        ids.append(baseline.json()["forecast"]["id"])
+    impact_body = {
+        "expected_version": active.json()["case"]["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "controlled_object_id": object_id,
+        "forecast_projection_ids": ids,
+        "consequence_date": data_date.isoformat(),
+    }
+    result = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "recovery-impact"}, json=impact_body,
+    )
+    assert result.status_code == 201, result.text
+    assessment = result.json()["assessment"]
+    response_path = next(
+        path for path in assessment["consequence_paths"] if path["source"] == "AUTHORIZED_RESPONSE"
+    )
+    qualification = response_path["recovery_qualification"]
+    assert qualification["qualified"] is (mode == "qualified")
+    if mode == "qualified":
+        assert "QUALIFIED_RECOVERY_REDUCTION" in assessment["priority_reason_codes"]
+        assert qualification["comparisons"][0]["projected_improvement"] is True
+    else:
+        assert "ACTIVE_RESPONSE_NO_PRIORITY_REDUCTION" in assessment["priority_reason_codes"]
+        expected = {
+            "no_comparison": "RECOVERY_COMPARISON_MISSING",
+            "failed": "RESPONSE_NOT_ACTIVE",
+            "expired": "RESPONSE_OUTSIDE_EFFECTIVE_WINDOW",
+            "no_benefit": "NO_PROJECTED_IMPROVEMENT",
+        }[mode]
+        assert expected in qualification["reason_codes"]
+    if mode in ("failed", "expired"):
+        assert assessment["assessment_status"] == "VERIFICATION_REQUIRED"
+        forecasts = client.get(f"{base_url}/forecasts", headers=headers).json()
+        assert forecasts[1]["validity"] == "RECALCULATION_REQUIRED"
+    replay = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "recovery-impact"}, json=impact_body,
+    )
+    assert replay.status_code == 201
+    assert replay.json()["assessment"] == assessment

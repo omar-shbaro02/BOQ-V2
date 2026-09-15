@@ -37,6 +37,7 @@ export default function Home() {
           <Link className="status" href="/cost">
             Cost
           </Link>
+          <Link className="status" href="/impact">Consequence &amp; Priority</Link>
           <Link className="status" href="/forecast">
             Forecast →
           </Link>

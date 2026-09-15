@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-07
+Last updated: 2026-09-14
 
 ## Completed phases
 
@@ -280,18 +280,53 @@ Verification evidence:
 
 Phase boundary: Phase 8 projects bounded results under explicit methods and assumptions. It does not convert projections into authorized schedules/budgets, assert cause or consequence severity, prioritize cases, recommend a disposition, approve a response, or record a human decision.
 
+## Current work
+
+### Phase 9 — Consequence, confidence, urgency, and priority
+
+Status: **in progress**. Repository review found existing Phase 9 models, schemas, service, routes, shared taxonomies, and migration `0010_impact_priority` that were not recorded in this document. Their presence alone does not satisfy the phase exit gate.
+
+Continued implementation:
+
+- Added `/impact` browser workbench and home navigation for assessment creation and history, separate consequence/confidence/urgency/priority dimensions, five clocks, policy selection, ranking reasons, and consequence lineage.
+- Preserved schedule/cost upstream stop gates: restricted specialist assessments cannot become supported consequence paths, and their status and limitations remain visible.
+- Material milestone escalation now checks materiality; downstream and completion exposure require positive residual delay, so fully absorbed delay does not raise consequence severity.
+- Attached exact specialist-result and evidence IDs to progress/schedule/cost consequence paths.
+- Preserved missing-deadline limitations even when another verification restriction also applies.
+- Advanced the impact calculation formula to `IMPACT-PRIORITY-1.0.2` for corrected gates and forecast confidence propagation; existing results are not rewritten.
+- Added API regression scenarios for consequential versus float-absorbed delay, incomplete-network restrictions, clock interaction, confidence ceilings, idempotency/mismatch, stale case versions, history, tenant access, and unknown deadlines.
+
+Latest continuation — forecast confidence and source propagation:
+
+- Forecast-only impact assessments now resolve their snapshot/object-bound specialist sources and inherit upstream confidence instead of defaulting to zero.
+- Source reliability caps truth, forecast, and consequence confidence; the forecast horizon also caps aggregate confidence unless an explicit approved override applies.
+- Forecast consequence paths retain specialist/evidence IDs, semantic state, truth type, assumptions, and limitations. Hypothetical scenarios remain qualified as limited assessments.
+- Upstream schedule/cost restrictions and forecast limitations remain visible even when only the forecast was selected.
+- Added forecast-ID selection to `/impact` and regression scenarios for forecast-only/mixed inputs, hypothetical branches, source reliability, and results beyond the selected horizon.
+
+Verification for this continuation:
+
+- Generated-contract freshness, Python compilation, and whitespace checks passed.
+- The workbench component, including forecast selection, passed an isolated strict TypeScript check.
+- Six dependency-free confidence-rule tests passed: forecast horizon ceiling, weakest-source reliability, duplicate-input stability, missing/zero input handling, horizon decay, and invalid-input rejection.
+- The confidence calculation is isolated in `app/confidence.py`; passing API tests cover the separate persistence, provenance, and authorization boundaries.
+- Full Python/API suite passed: **69 tests**, including the previous Phase 9 safeguards and new forecast-confidence scenarios. Locked runtime/test dependencies installed successfully on retry; Ruff remains unavailable after its large download was deferred.
+- Alembic offline PostgreSQL SQL generation passed through `0010_impact_priority`; this does not replace live migration/rollback and trigger verification.
+- Full web lint/type/build checks are pending: npm installation failed with `ECONNRESET`; a cache-assisted retry was stopped after downloads continued to stall. Initial lint/type checks confirmed incomplete Next.js dependencies, not a passing application check.
+- Live PostgreSQL migration rehearsal is pending: Docker CLI is installed, but its configured Colima daemon is not running.
+
+Remaining Phase 9 exit work:
+
+1. Complete recovery-option qualification, broader source-reliability/override governance coverage, and calibration logging. Forecast confidence/source propagation is implemented and covered by passing runtime tests.
+2. Review priority behavior for weak evidence, cross-cutting reach, and active responses; add regression coverage for those cases and cost/commercial consequences.
+3. Complete reviewer-visible confidence override and guided forecast/recovery selection flows; direct forecast-ID selection is available.
+4. Rehearse `0009 → 0010 → 0009 → 0010` against live PostgreSQL and verify append-only protections.
+5. Finish full API/web validation before declaring the phase complete.
+
 ## Remaining delivery count
 
-The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `8` are complete, leaving **6 phases** (`9` through `14`).
+The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `8` are recorded complete, leaving **6 phases**: Phase `9` is in progress and Phases `10` through `14` remain. Earlier verification entries are historical evidence, not fresh certification of this checkout.
 
-## Next phase
+## Next implementation order
 
-Phase 9 — Consequence, confidence, urgency, and priority.
-
-Next implementation order:
-
-1. Build evidence-backed consequence paths across schedule, milestones, completion, cost, commercial exposure, and recovery options.
-2. Calculate separate truth, forecast, consequence, and aggregate confidence with upstream ceilings and override governance.
-3. Model consequence, verification, approval, mobilization, and recovery-window clocks independently.
-4. Apply a transparent priority policy with cross-cutting reach and active-response awareness.
-5. Keep variance/status, consequence, confidence, urgency, and priority stored and displayed as independent dimensions.
+Finish the Phase 9 exit work above, then continue to Phase 10 — Disposition, specialists, and orchestrator. Production OIDC, object storage, and malware-scanning selections remain the external-integration limitations recorded in Phases 1–2.

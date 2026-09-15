@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.auth import ActorContext
+from app.services.recovery import utc
 from app.forecast_schemas import ForecastCreate, ForecastPolicyCreate
 from app.generated.taxonomies import (
     ActiveResponseStatus,
@@ -481,7 +482,13 @@ def validity_for(session: Session, forecast: ForecastProjection) -> ForecastVali
         return ForecastValidity.RECALCULATION_REQUIRED
     if forecast.active_response_id:
         response = session.get(CaseActiveResponse, forecast.active_response_id)
-        if response is None or response.status != ActiveResponseStatus.ACTIVE:
+        now = datetime.now(UTC)
+        if (
+            response is None
+            or response.status != ActiveResponseStatus.ACTIVE
+            or now < utc(response.effective_from)
+            or (response.effective_until is not None and now > utc(response.effective_until))
+        ):
             return ForecastValidity.RECALCULATION_REQUIRED
     return ForecastValidity.CURRENT
 

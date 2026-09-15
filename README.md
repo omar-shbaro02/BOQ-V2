@@ -71,3 +71,7 @@ Open `/forecast` to inspect immutable production, schedule, and cost projection 
 The MVP runs in shadow/advisory mode for one active project and 5–10 meaningful work packages. It ingests controlled project context and evidence, constructs and evaluates Decision Cases, shows reasoning and confidence, recommends a disposition, records a separate human decision, and monitors outcomes. It has no autonomous execution authority.
 
 The first meaningful milestone is reached only when all five frozen synthetic cases produce acceptable results and all governance hard gates pass.
+
+### Consequence and priority workbench (Phase 9, in progress)
+
+Open `/impact` to load a Decision Case, select snapshot-bound progress/schedule/cost results, and assess consequence, confidence, five decision clocks, and priority. The history shows policy/formula versions, ranking reasons, consequence lineage, and upstream restrictions. Dates and response durations are explicit planning inputs in calendar days. A missing deadline leaves the urgency margin unknown. Phase 9 still requires the remaining confidence/recovery governance work and a live migration rehearsal; see `docs/IMPLEMENTATION_STATUS.md`.
