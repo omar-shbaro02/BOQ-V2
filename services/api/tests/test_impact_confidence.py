@@ -2,9 +2,26 @@ from decimal import Decimal
 from unittest import TestCase
 
 from app.confidence import impact_confidence
+from app.services.impact import priority_score
 
 
 class ImpactConfidenceTests(TestCase):
+    def test_cross_cutting_bonus_cannot_bypass_zero_confidence(self) -> None:
+        self.assertEqual(
+            priority_score(
+                Decimal("100"), Decimal("50"), 4, Decimal("0"), Decimal("10")
+            ),
+            Decimal("0.000"),
+        )
+
+    def test_active_response_reduction_applies_after_confidence_bound(self) -> None:
+        self.assertEqual(
+            priority_score(
+                Decimal("100"), Decimal("50"), 3, Decimal("0.5"), Decimal("10"), Decimal("5")
+            ),
+            Decimal("42.500"),
+        )
+
     def test_forecast_retains_truth_while_horizon_caps_overall(self):
         result = impact_confidence([Decimal("0.9")], [Decimal("0.7")], [])
         self.assertEqual(result.truth, Decimal("0.9"))

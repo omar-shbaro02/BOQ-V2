@@ -75,6 +75,25 @@ def policy_value(policy: dict[str, Any] | ImpactPriorityPolicy, name: str) -> An
     return policy[name] if isinstance(policy, dict) else getattr(policy, name)
 
 
+def priority_score(
+    severity_points: Decimal,
+    urgency_points: Decimal,
+    cross_cutting_reach: int,
+    overall_confidence: Decimal,
+    cross_cutting_bonus_per_object: Decimal,
+    active_response_reduction: Decimal = Decimal("0"),
+) -> Decimal:
+    """Keep every positive priority driver bounded by the evidence confidence."""
+    raw_score = (
+        severity_points * Decimal("0.6")
+        + urgency_points * Decimal("0.3")
+        + Decimal(max(0, cross_cutting_reach - 1)) * cross_cutting_bonus_per_object
+    )
+    return min(Decimal("100"), max(Decimal("0"), raw_score * overall_confidence - active_response_reduction)).quantize(
+        Decimal("0.001")
+    )
+
+
 def create_policy(
     session: Session, actor: ActorContext, project: Project, data: ImpactPolicyCreate
 ) -> ImpactPriorityPolicy:
@@ -585,19 +604,20 @@ def create_impact_assessment(
         )
     )
     reach = max(1, len(snapshot.controlled_object_ids))
-    score = (
-        severity_points * Decimal("0.6") + urgency_points * Decimal("0.3")
-    ) * overall_confidence
-    score += Decimal(max(0, reach - 1)) * Decimal(
-        str(policy_value(policy, "cross_cutting_bonus_per_object"))
-    )
     response_reduction_applied = bool(qualified_response_ids) and all(
         not value.limitations and value.truth_type != TruthType.CONTRADICTED
         for value in (progress, schedule, cost, *forecast_sources.values()) if value is not None
     ) and all(value == ForecastValidity.CURRENT for value in forecast_validities.values())
-    if response_reduction_applied:
-        score -= Decimal(str(policy_value(policy, "active_response_score_reduction")))
-    score = min(Decimal("100"), max(Decimal("0"), score)).quantize(Decimal("0.001"))
+    score = priority_score(
+        severity_points,
+        urgency_points,
+        reach,
+        overall_confidence,
+        Decimal(str(policy_value(policy, "cross_cutting_bonus_per_object"))),
+        Decimal(str(policy_value(policy, "active_response_score_reduction")))
+        if response_reduction_applied
+        else Decimal("0"),
+    )
     if score >= Decimal(str(policy_value(policy, "critical_priority_score"))):
         band = PriorityBand.CRITICAL
     elif score >= Decimal(str(policy_value(policy, "high_priority_score"))):

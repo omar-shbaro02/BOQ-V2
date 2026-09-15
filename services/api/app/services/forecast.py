@@ -45,7 +45,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 DEFAULT_POLICY_VERSION = "FORECAST-DEFAULT-1.0.0"
-FORMULA_VERSION = "FORECAST-DETERMINISTIC-1.0.0"
+FORMULA_VERSION = "FORECAST-DETERMINISTIC-1.0.1"
 DEFAULT_POLICY = {
     "id": None,
     "organization_id": None,
@@ -262,7 +262,10 @@ def create_forecast(
                 status_code=422, detail="Progress input cannot support a rate forecast"
             )
         actual = session.get(ProgressMeasurement, evaluation.actual_measurement_id)
-        remaining = actual.denominator - actual.numerator
+        # Productivity is stored as completion-ratio per day.  Forecast in the
+        # same dimension; dividing an absolute quantity by that rate inflates
+        # completion horizons by the measurement denominator.
+        remaining = Decimal("1") - actual.completion_ratio
         multiplier = decimal_parameter(parameters, "productivity_multiplier", "1")
         point, lower, upper, projected_days = date_result(
             snapshot.data_date.date(),
@@ -276,8 +279,8 @@ def create_forecast(
         upstream = evaluation.confidence
         evidence_ids = list(evaluation.input_evidence_ids)
         input_values = {
-            "remaining_quantity": str(remaining),
-            "observed_productivity_per_day": str(evaluation.actual_productivity),
+            "remaining_completion_ratio": str(remaining),
+            "observed_completion_ratio_per_day": str(evaluation.actual_productivity),
             "measurement_unit": actual.unit,
         }
         limitations.append(

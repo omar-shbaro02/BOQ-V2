@@ -315,11 +315,25 @@ Verification for this continuation:
 - Full web lint/type/build checks are pending: npm installation failed with `ECONNRESET`; a cache-assisted retry was stopped after downloads continued to stall. Initial lint/type checks confirmed incomplete Next.js dependencies, not a passing application check.
 - Live PostgreSQL migration rehearsal is pending: Docker CLI is installed, but its configured Colima daemon is not running.
 
+Latest continuation — reviewer confidence override visibility and recovery forecast correction:
+
+- Added a reviewer-facing confidence-override flow in `/impact`: it lists recorded overrides, requires the case version, snapshot, recorded upstream ceiling, approved confidence, and 20-character justification, then refreshes the case version and override history.
+- The assessment form can select a recorded override. The API remains authoritative: it rejects an override unless its case, snapshot, and computed upstream confidence ceiling exactly match the new assessment.
+- Web type checking remains unverified on this machine because the workspace dependency install is incomplete (`tsc: command not found`).
+- Corrected the production-rate forecast dimensional calculation: productivity is a completion-ratio-per-day, so the forecast now divides remaining completion ratio by that rate rather than dividing an absolute remaining quantity by it. The old mismatch inflated completion horizons by the measurement denominator and incorrectly marked valid recovery comparisons as `LIMITED`.
+- Advanced the immutable forecast formula to `FORECAST-DETERMINISTIC-1.0.1`; existing forecast rows retain their recorded formula version and are not rewritten.
+- Focused forecast/impact/recovery verification passed: **19 tests**. The recovery comparison now passes with the original 60-day horizon while retaining the rule that genuinely limited forecasts cannot qualify for a priority reduction.
+
+Latest continuation — confidence-bounded priority reach:
+
+- Corrected priority scoring so cross-cutting reach is included before confidence weighting. A case with zero confidence can no longer gain priority solely from its number of affected controlled objects; active-response reduction remains explicit and is applied only after the confidence-bound score is calculated.
+- Added deterministic regression coverage for zero-confidence cross-cutting reach and active-response reduction. Focused confidence/forecast/impact/recovery verification passed: **21 tests**.
+
 Remaining Phase 9 exit work:
 
-1. Complete recovery-option qualification, broader source-reliability/override governance coverage, and calibration logging. Forecast confidence/source propagation is implemented and covered by passing runtime tests.
-2. Review priority behavior for weak evidence, cross-cutting reach, and active responses; add regression coverage for those cases and cost/commercial consequences.
-3. Complete reviewer-visible confidence override and guided forecast/recovery selection flows; direct forecast-ID selection is available.
+1. Complete broader source-reliability/override governance coverage and calibration logging. Forecast confidence/source propagation and recovery qualification are implemented; genuinely limited forecasts must not qualify for a priority reduction.
+2. Add integration regression coverage for cost/commercial consequence paths and finish the remaining weak-evidence priority review. Cross-cutting reach and active-response priority behavior are now confidence-bounded and covered by deterministic regression tests.
+3. Complete guided forecast/recovery selection flows. Reviewer-visible confidence override and direct forecast-ID selection are available.
 4. Rehearse `0009 → 0010 → 0009 → 0010` against live PostgreSQL and verify append-only protections.
 5. Finish full API/web validation before declaring the phase complete.
 
