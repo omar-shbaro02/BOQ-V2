@@ -48,7 +48,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 DEFAULT_POLICY_VERSION = "IMPACT-DEFAULT-1.0.0"
-FORMULA_VERSION = "IMPACT-PRIORITY-1.0.3"
+FORMULA_VERSION = "IMPACT-PRIORITY-1.0.4"
 DEFAULT_POLICY = {
     "id": None,
     "organization_id": None,
@@ -89,9 +89,8 @@ def priority_score(
         + urgency_points * Decimal("0.3")
         + Decimal(max(0, cross_cutting_reach - 1)) * cross_cutting_bonus_per_object
     )
-    return min(Decimal("100"), max(Decimal("0"), raw_score * overall_confidence - active_response_reduction)).quantize(
-        Decimal("0.001")
-    )
+    confidence_bound_score = raw_score * overall_confidence - active_response_reduction
+    return min(Decimal("100"), max(Decimal("0"), confidence_bound_score)).quantize(Decimal("0.001"))
 
 
 def create_policy(
@@ -383,35 +382,33 @@ def create_impact_assessment(
             )
             severity = max((severity, ConsequenceSeverity.HIGH), key=_severity_rank)
     cost_ratio = Decimal("0")
-    if (
-        cost
-        and cost.assessment_status == "ASSESSED"
-        and cost.estimate_at_completion is not None
-        and cost.current_authorized_budget > 0
-    ):
-        exposure = max(Decimal("0"), cost.estimate_at_completion - cost.current_authorized_budget)
-        cost_ratio = exposure / cost.current_authorized_budget
-        if exposure > 0:
-            paths.append(
-                {
-                    "type": ConsequenceType.COST_EXPOSURE.value,
-                    "source": "COST",
-                    "amount": str(exposure),
-                    "currency": cost.currency,
-                    "authorized_budget": str(cost.current_authorized_budget),
-                    "exposure_ratio": str(cost_ratio),
-                }
+    if cost and cost.assessment_status == "ASSESSED":
+        if cost.estimate_at_completion is not None and cost.current_authorized_budget > 0:
+            exposure = max(
+                Decimal("0"), cost.estimate_at_completion - cost.current_authorized_budget
             )
-        threshold_severity = ConsequenceSeverity.NONE
-        if cost_ratio >= Decimal(str(policy_value(policy, "critical_cost_exposure_ratio"))):
-            threshold_severity = ConsequenceSeverity.CRITICAL
-        elif cost_ratio >= Decimal(str(policy_value(policy, "high_cost_exposure_ratio"))):
-            threshold_severity = ConsequenceSeverity.HIGH
-        elif cost_ratio >= Decimal(str(policy_value(policy, "medium_cost_exposure_ratio"))):
-            threshold_severity = ConsequenceSeverity.MEDIUM
-        elif exposure > 0:
-            threshold_severity = ConsequenceSeverity.LOW
-        severity = max((severity, threshold_severity), key=_severity_rank)
+            cost_ratio = exposure / cost.current_authorized_budget
+            if exposure > 0:
+                paths.append(
+                    {
+                        "type": ConsequenceType.COST_EXPOSURE.value,
+                        "source": "COST",
+                        "amount": str(exposure),
+                        "currency": cost.currency,
+                        "authorized_budget": str(cost.current_authorized_budget),
+                        "exposure_ratio": str(cost_ratio),
+                    }
+                )
+            threshold_severity = ConsequenceSeverity.NONE
+            if cost_ratio >= Decimal(str(policy_value(policy, "critical_cost_exposure_ratio"))):
+                threshold_severity = ConsequenceSeverity.CRITICAL
+            elif cost_ratio >= Decimal(str(policy_value(policy, "high_cost_exposure_ratio"))):
+                threshold_severity = ConsequenceSeverity.HIGH
+            elif cost_ratio >= Decimal(str(policy_value(policy, "medium_cost_exposure_ratio"))):
+                threshold_severity = ConsequenceSeverity.MEDIUM
+            elif exposure > 0:
+                threshold_severity = ConsequenceSeverity.LOW
+            severity = max((severity, threshold_severity), key=_severity_rank)
         for effect in cost.explained_effects:
             paths.append(
                 {
@@ -604,10 +601,15 @@ def create_impact_assessment(
         )
     )
     reach = max(1, len(snapshot.controlled_object_ids))
-    response_reduction_applied = bool(qualified_response_ids) and all(
-        not value.limitations and value.truth_type != TruthType.CONTRADICTED
-        for value in (progress, schedule, cost, *forecast_sources.values()) if value is not None
-    ) and all(value == ForecastValidity.CURRENT for value in forecast_validities.values())
+    response_reduction_applied = (
+        bool(qualified_response_ids)
+        and all(
+            not value.limitations and value.truth_type != TruthType.CONTRADICTED
+            for value in (progress, schedule, cost, *forecast_sources.values())
+            if value is not None
+        )
+        and all(value == ForecastValidity.CURRENT for value in forecast_validities.values())
+    )
     score = priority_score(
         severity_points,
         urgency_points,

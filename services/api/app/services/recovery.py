@@ -37,8 +37,15 @@ def qualify_recovery(
     if not candidates:
         reasons.append("RECOVERY_FORECAST_MISSING")
     dimensions = (
-        "target", "method", "policy_version", "horizon_end", "data_date", "result_unit",
-        "progress_evaluation_id", "schedule_assessment_id", "cost_assessment_id",
+        "target",
+        "method",
+        "policy_version",
+        "horizon_end",
+        "data_date",
+        "result_unit",
+        "progress_evaluation_id",
+        "schedule_assessment_id",
+        "cost_assessment_id",
     )
     for candidate in candidates:
         if validities[str(candidate.id)] != "CURRENT":
@@ -52,7 +59,8 @@ def qualify_recovery(
             reasons.append("RECOVERY_FORECAST_LIMITED")
             continue
         baselines = [
-            item for item in forecasts
+            item
+            for item in forecasts
             if item.scenario_type == "CONTINUED_PERFORMANCE"
             and item.semantic_state == "FORECAST"
             and validities[str(item.id)] == "CURRENT"
@@ -68,17 +76,19 @@ def qualify_recovery(
                 if candidate.result_unit == "DATE"
                 else Decimal(candidate.result_point) < Decimal(baseline.result_point)
             )
-            comparisons.append({
-                "response_forecast_id": str(candidate.id),
-                "continued_forecast_id": str(baseline.id),
-                "target": candidate.target,
-                "continued_point": baseline.result_point,
-                "response_point": candidate.result_point,
-                "result_unit": candidate.result_unit,
-                "projected_improvement": improved,
-                "assumptions": list(candidate.assumptions),
-                "limitations": list(candidate.limitations),
-            })
+            comparisons.append(
+                {
+                    "response_forecast_id": str(candidate.id),
+                    "continued_forecast_id": str(baseline.id),
+                    "target": candidate.target,
+                    "continued_point": baseline.result_point,
+                    "response_point": candidate.result_point,
+                    "result_unit": candidate.result_unit,
+                    "projected_improvement": improved,
+                    "assumptions": list(candidate.assumptions),
+                    "limitations": list(candidate.limitations),
+                }
+            )
             if not improved:
                 reasons.append("NO_PROJECTED_IMPROVEMENT")
     qualified = not reasons and bool(comparisons)
@@ -87,5 +97,7 @@ def qualify_recovery(
         "reason_codes": sorted(set(reasons)) or ["PROJECTED_RECOVERY_BENEFIT"],
         "comparisons": comparisons,
         "assessed_at": assessed_at.isoformat(),
-        "conclusion_boundary": "Projected benefit under assumptions; execution and success are unproven",
+        "conclusion_boundary": (
+            "Projected benefit under assumptions; execution and success are unproven"
+        ),
     }

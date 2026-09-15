@@ -639,6 +639,22 @@ class DecisionCaseShell(Base):
             use_alter=True,
         )
     )
+    last_orchestration_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "orchestration_run.id",
+            name="fk_decision_case_last_orchestration_run",
+            ondelete="RESTRICT",
+            use_alter=True,
+        )
+    )
+    last_human_decision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "human_decision.id",
+            name="fk_decision_case_last_human_decision",
+            ondelete="RESTRICT",
+            use_alter=True,
+        )
+    )
     outcome_reference: Mapped[str | None] = mapped_column(String(200))
     close_reason: Mapped[str | None] = mapped_column(Text)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1517,3 +1533,166 @@ class ImpactAssessment(Base):
     assessed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class OrchestrationRun(Base):
+    __tablename__ = "orchestration_run"
+    __table_args__ = (
+        UniqueConstraint("case_id", "run_number", name="uq_orchestration_run_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_orchestration_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    retry_of_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orchestration_run.id", ondelete="RESTRICT"), index=True
+    )
+    run_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    readiness: Mapped[str] = mapped_column(String(50), nullable=False)
+    recommended_disposition: Mapped[str | None] = mapped_column(String(20))
+    alternative_dispositions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    blockers: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    contradiction_findings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    case_brief: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    policy_versions: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SpecialistRun(Base):
+    __tablename__ = "specialist_run"
+    __table_args__ = (
+        UniqueConstraint(
+            "orchestration_run_id", "specialist_kind", name="uq_orchestration_specialist_kind"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    orchestration_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orchestration_run.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    specialist_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_references: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    output_references: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    calculations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    evidence_references: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    truth_labels: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    contradictions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    requested_evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    contract_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    error_class: Mapped[str | None] = mapped_column(String(80))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SpecialistContradictionResolution(Base):
+    __tablename__ = "specialist_contradiction_resolution"
+    __table_args__ = (
+        UniqueConstraint(
+            "orchestration_run_id",
+            "contradiction_index",
+            name="uq_specialist_contradiction_resolution",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("case_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    orchestration_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orchestration_run.id", ondelete="RESTRICT"), index=True
+    )
+    contradiction_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    contradiction_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_result_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    selected_result_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    rejected_result_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    resolution_basis: Mapped[str] = mapped_column(Text, nullable=False)
+    downstream_invalidations: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    resolved_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    resolved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class HumanDecision(Base):
+    __tablename__ = "human_decision"
+    __table_args__ = (
+        UniqueConstraint("case_id", "decision_number", name="uq_human_decision_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_human_decision_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    orchestration_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orchestration_run.id", ondelete="RESTRICT"), index=True
+    )
+    authority_grant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authority_grant.id", ondelete="RESTRICT"), index=True
+    )
+    decision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    disposition: Mapped[str] = mapped_column(String(20), nullable=False)
+    recommendation_agreement: Mapped[str] = mapped_column(String(30), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    authority_scope: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    decision_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    response_authorization_reference: Mapped[str | None] = mapped_column(String(200))
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    decided_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

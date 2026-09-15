@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "taxonomies": {
     "SemanticState": [
       "BASELINE",
@@ -198,6 +198,55 @@
       "FORECAST_SCENARIO",
       "IMPACT_PRIORITY"
     ],
+    "SpecialistRunStatus": [
+      "PENDING",
+      "RUNNING",
+      "SUCCEEDED",
+      "LIMITED",
+      "FAILED",
+      "SUPERSEDED"
+    ],
+    "OrchestrationStatus": [
+      "PENDING",
+      "RUNNING",
+      "SUCCEEDED",
+      "LIMITED",
+      "STOPPED",
+      "FAILED",
+      "SUPERSEDED"
+    ],
+    "SpecialistContradictionType": [
+      "SOURCE",
+      "SEMANTIC_BASIS",
+      "VERSION",
+      "TEMPORAL",
+      "CALCULATION",
+      "SPECIALIST_JUDGMENT"
+    ],
+    "HumanDecisionAgreement": ["AGREE", "PARTIALLY_AGREE", "DISAGREE"],
+    "AuthorityValidationOutcome": [
+      "AUTHORIZED",
+      "APPROVAL_REQUIRED",
+      "ESCALATION_REQUIRED",
+      "DENIED"
+    ],
+    "ResponseExecutionStatus": [
+      "PROPOSED",
+      "AUTHORIZED",
+      "MOBILIZING",
+      "IN_PROGRESS",
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "OutcomeClassification": [
+      "ACHIEVED",
+      "PARTIALLY_ACHIEVED",
+      "NOT_ACHIEVED",
+      "NOT_YET_OBSERVABLE",
+      "INCONCLUSIVE"
+    ],
+    "LearningCategory": ["PRODUCT", "DATA", "POLICY", "USABILITY", "METHODOLOGY"],
     "ProjectRole": [
       "ORGANIZATION_ADMIN",
       "PROJECT_ADMIN",
@@ -298,7 +347,11 @@
       "COST_ASSESSED",
       "FORECAST_CREATED",
       "CONFIDENCE_OVERRIDE_APPROVED",
-      "IMPACT_ASSESSED"
+      "IMPACT_ASSESSED",
+      "ORCHESTRATION_RUN_STARTED",
+      "ORCHESTRATION_RUN_COMPLETED",
+      "SPECIALIST_CONTRADICTION_RESOLVED",
+      "HUMAN_DECISION_RECORDED"
     ],
     "CaseReopenTrigger": [
       "NEW_MATERIAL_EVIDENCE",

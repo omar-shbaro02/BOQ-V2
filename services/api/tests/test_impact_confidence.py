@@ -8,9 +8,7 @@ from app.services.impact import priority_score
 class ImpactConfidenceTests(TestCase):
     def test_cross_cutting_bonus_cannot_bypass_zero_confidence(self) -> None:
         self.assertEqual(
-            priority_score(
-                Decimal("100"), Decimal("50"), 4, Decimal("0"), Decimal("10")
-            ),
+            priority_score(Decimal("100"), Decimal("50"), 4, Decimal("0"), Decimal("10")),
             Decimal("0.000"),
         )
 

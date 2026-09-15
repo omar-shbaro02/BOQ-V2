@@ -8,7 +8,9 @@ from app.routers.control_context import router as control_context_router
 from app.routers.cost import router as cost_router
 from app.routers.evidence import router as evidence_router
 from app.routers.forecast import router as forecast_router
+from app.routers.governance import router as governance_router
 from app.routers.impact import router as impact_router
+from app.routers.orchestration import router as orchestration_router
 from app.routers.progress import router as progress_router
 from app.routers.schedule import router as schedule_router
 from app.routers.signals import router as signals_router
@@ -41,6 +43,8 @@ app.include_router(schedule_router)
 app.include_router(cost_router)
 app.include_router(forecast_router)
 app.include_router(impact_router)
+app.include_router(orchestration_router)
+app.include_router(governance_router)
 
 
 @app.get("/health", tags=["operations"])
@@ -62,6 +66,14 @@ def get_taxonomies() -> dict[str, object]:
         "ProgressBasis",
         "UrgencyLevel",
         "SpecialistKind",
+        "SpecialistRunStatus",
+        "OrchestrationStatus",
+        "SpecialistContradictionType",
+        "HumanDecisionAgreement",
+        "AuthorityValidationOutcome",
+        "ResponseExecutionStatus",
+        "OutcomeClassification",
+        "LearningCategory",
         "ProjectRole",
         "ControlledObjectRelationType",
         "AuthorizedContextType",

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 ## Completed phases
 
@@ -284,7 +284,7 @@ Phase boundary: Phase 8 projects bounded results under explicit methods and assu
 
 ### Phase 9 — Consequence, confidence, urgency, and priority
 
-Status: **in progress**. Repository review found existing Phase 9 models, schemas, service, routes, shared taxonomies, and migration `0010_impact_priority` that were not recorded in this document. Their presence alone does not satisfy the phase exit gate.
+Status: **complete**.
 
 Continued implementation:
 
@@ -329,18 +329,97 @@ Latest continuation — confidence-bounded priority reach:
 - Corrected priority scoring so cross-cutting reach is included before confidence weighting. A case with zero confidence can no longer gain priority solely from its number of affected controlled objects; active-response reduction remains explicit and is applied only after the confidence-bound score is calculated.
 - Added deterministic regression coverage for zero-confidence cross-cutting reach and active-response reduction. Focused confidence/forecast/impact/recovery verification passed: **21 tests**.
 
-Remaining Phase 9 exit work:
+Latest continuation — cross-machine validation and live migration rehearsal:
 
-1. Complete broader source-reliability/override governance coverage and calibration logging. Forecast confidence/source propagation and recovery qualification are implemented; genuinely limited forecasts must not qualify for a priority reduction.
-2. Add integration regression coverage for cost/commercial consequence paths and finish the remaining weak-evidence priority review. Cross-cutting reach and active-response priority behavior are now confidence-bounded and covered by deterministic regression tests.
-3. Complete guided forecast/recovery selection flows. Reviewer-visible confidence override and direct forecast-ID selection are available.
-4. Rehearse `0009 → 0010 → 0009 → 0010` against live PostgreSQL and verify append-only protections.
-5. Finish full API/web validation before declaring the phase complete.
+- Restored repository-wide Ruff formatting in the Phase 9 forecast, impact, recovery, and regression-test files; Python and web lint now pass without warnings.
+- Full Python/API suite passed: **76 tests**. Generated-contract freshness, Python compilation, strict TypeScript, web lint, and the Next.js production build also passed.
+- Live PostgreSQL `0009_forecast_scenarios → 0010_impact_priority → 0009_forecast_scenarios → 0010_impact_priority` migration rehearsal passed.
+- Verified the `impact_priority_policy`, `confidence_override`, and `impact_assessment` append-only triggers after re-upgrade.
+- A direct PostgreSQL attempt to mutate an impact-priority policy was rejected by the append-only trigger; the rollback-safe rehearsal left no test records behind.
+
+Phase 9 completion:
+
+- Added supported and weak-evidence cost/commercial consequence regression coverage with exact assessment/evidence lineage, currency, exposure ratio, upstream stop gates, and the explicit non-entitlement/non-liability boundary.
+- Corrected commercial consequence propagation so an assessed timing effect remains visible when Phase 7 properly suppresses EAC; advanced the immutable calculation formula to `IMPACT-PRIORITY-1.0.4` without rewriting prior assessments.
+- Added confidence-override governance regression coverage for optimistic case versions, exact computed-ceiling matching, reviewer identity and justification, immutable history, case-ledger provenance, and rejected mismatches.
+- Replaced raw specialist/forecast UUID entry in `/impact` with case-loaded selectable progress, schedule, cost, forecast, and recovery-comparison inputs.
+- Full verification passed: **80 Python/API tests**, generated-contract freshness, Ruff, Python compilation, ESLint, strict TypeScript, and the Next.js production build.
+- Live PostgreSQL API smoke passed through authorized schedule, frozen snapshot, schedule assessment, independent impact dimensions, reviewer confidence override, and audit/case-ledger projections.
+
+Phase boundary: Phase 9 records consequence, confidence, urgency, and priority independently with traceable reasons. Confidence history is calibration-ready; realized-outcome calibration remains coupled to the response/outcome lifecycle in Phase 11. Phase 9 does not select a management disposition, assemble a recommendation, or record a human decision.
+
+### Phase 10 — Disposition, specialists, and orchestrator
+
+Status: **complete**.
+
+Initial implementation:
+
+- Added shared Python/TypeScript taxonomies for specialist run state, orchestration state, and source/semantic/version/temporal/calculation/specialist-judgment contradiction classes.
+- Added immutable, case/snapshot-bound orchestration runs and five bounded specialist-run records with attempts, input/output references, findings, calculations, evidence, truth labels, assumptions, contradictions, confidence, limitations, requested evidence, contract version, errors, and timestamps.
+- Added migration `0011_orchestration_runs`, a latest-run case pointer, append-only PostgreSQL triggers, project/case query APIs, and optimistic/idempotent run creation.
+- Added deterministic snapshot and result-boundary validation. A missing or verification-restricted impact assessment stops safely at `VERIFY`; supported consequences select a bounded disposition while missing noncritical specialists produce `DECISION_READY_WITH_LIMITATIONS` rather than a false full success.
+- Added all five alternative dispositions, structured case briefs, human-review authority routing, explicit prohibited autonomous actions, and orchestration start/completion ledger and audit events.
+- Regression coverage verifies safe stop behavior, five specialist boundaries, supported `INTERVENE`, limited aggregate status, idempotent replay/mismatch rejection, history, alternatives, and ledger projection.
+
+Latest continuation — contradiction stops, retry lineage, and workbench:
+
+- Added deterministic material contradiction detection for contradicted source truth, controlled-object disagreement, and direct-result versus forecast-lineage version conflicts.
+- Persisted contradiction type, sources, status, materiality, description, and downstream invalidations; unresolved material contradictions propagate to every specialist result, create an evidence-resolution handoff, invalidate stronger disposition output, and stop at `VERIFY`.
+- Added reason-coded explanations for all five disposition alternatives plus explicit evidence-request and monitoring-trigger projections in the structured case brief.
+- Added immutable retry lineage. A retry creates a new run on the exact original snapshot, references the prior non-successful run, increments specialist attempt numbers, and never rewrites prior run history.
+- Added `/orchestration` workbench and home navigation with case-loaded specialist inputs, forecast multi-selection, retry selection, requested questions, run history, specialist boundaries, alternatives, blockers, contradictions, and structured brief inspection.
+
+Phase 10 completion:
+
+- Added immutable reviewed contradiction resolutions naming the selected result, rejected/limited results, reviewer basis, and downstream invalidations. Re-orchestration recognizes matching resolutions but requires invalidated upstream results to be recalculated before lifting other stop gates.
+- Added fail-closed specialist execution handling. Exceptions persist as `FAILED` specialist results with attempt, error class, zero confidence, limitations, and no invented output; a critical impact-specialist failure stops at `VERIFY`, while noncritical failures visibly limit the aggregate.
+- Coupled disposition to recorded case sufficiency and governance stops without allowing orchestration to overwrite sufficiency state. `INTERVENE` routes to `APPROVAL_REQUIRED`, `ESCALATE` routes to `ESCALATION_REQUIRED`, and all recommendations retain human authority.
+- Added deterministic narrative fidelity validation. Disposition drift, unsupported numbers, and autonomous authority claims fail closed against the structured brief before any optional narrative adapter can be trusted.
+- Added migration `0012_contradiction_resolutions`, immutable resolution history APIs, authorization, optimistic versions, audit/case-ledger provenance, and append-only database protection.
+- Live PostgreSQL Phase 10 API smoke passed through five specialist results, deterministic `INTERVENE`, limited readiness, approval routing, ledger events, and faithful narrative validation.
+
+Verification evidence:
+
+- **83 Python/API tests** passed.
+- Live PostgreSQL migration rehearsals passed through `0012_contradiction_resolutions`, including rollback/re-upgrade of both Phase 10 revisions.
+- All three Phase 10 tables and append-only triggers were verified after re-upgrade; direct orchestration-run and contradiction-resolution mutations were rejected and the rollback-safe probes left no data.
+- Alembic offline SQL generation, generated-contract freshness, Ruff, Python compilation, ESLint, strict TypeScript, and the Next.js production build passed.
+
+Phase boundary: Phase 10 publishes a versioned recommendation and structured brief, never a human decision or execution authority. Optional governed AI narrative adapters remain intentionally disabled; the deterministic/manual path and fidelity validator are complete. Human disposition, approval, response execution, and realized-outcome learning belong to Phase 11.
+
+### Phase 11 — Human governance and response lifecycle
+
+Status: **starting**.
+
+Initial contract work:
+
+- Added separate shared taxonomies for human agreement/disagreement, authority validation outcome, response execution status, realized-outcome classification, and learning category. These do not alter or reuse the Phase 10 recommendation state.
+
+Initial governance implementation:
+
+- Added immutable human decisions linked to a specific Phase 10 orchestration run but stored separately from its recommendation, with disposition, agreement/partial-agreement/disagreement, rationale, limitations, actor, timestamp, and optional response-authorization reference.
+- Added exact authority validation against an active actor grant, authority type, case controlled-object scope, validity dates, amount ceiling, and currency. An authorized project role without a matching grant is insufficient.
+- Enforced recommendation-agreement consistency, stopped/readiness gates, response-authorization boundaries, optimistic case versions, idempotency, and explicit analyst/outsider denial.
+- Human disposition now advances the case to `HUMAN_DISPOSITION` and routes governance independently: intervention requires approval, escalation requires escalation authority, monitoring/verification returns to analysis authority, and no-action can be authorized to proceed.
+- Added decision history APIs, a latest-decision case pointer, audit/case-ledger provenance, migration `0013_human_decisions`, and append-only PostgreSQL protection.
+
+Verification evidence for this slice:
+
+- Focused API coverage passed for agreement mismatch, missing authority, scoped amount/currency authority, authorized decision, lifecycle/governance routing, idempotent replay, outsider denial, history, and ledger events.
+- Live PostgreSQL `0012_contradiction_resolutions → 0013_human_decisions → 0012_contradiction_resolutions → 0013_human_decisions` migration rehearsal passed; the table and append-only trigger were verified after re-upgrade.
 
 ## Remaining delivery count
 
-The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `8` are recorded complete, leaving **6 phases**: Phase `9` is in progress and Phases `10` through `14` remain. Earlier verification entries are historical evidence, not fresh certification of this checkout.
+The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `10` are recorded complete, leaving **4 phases**: Phases `11` through `14`. Earlier verification entries are historical evidence, not fresh certification of this checkout.
+
+## Continuity handoff
+
+- Repository-level working agreements and invariants are recorded in `AGENTS.md`; a fresh Codex session should load that file before acting.
+- Resume Phase 11 after the completed human-decision slice. The next vertical slice is response proposal/simulation, explicit authorization linkage, execution-status observation, and outcome evidence.
+- Follow that with close/reopen integration and immutable learning/calibration records before declaring Phase 11 complete.
+- The current checkpoint includes migrations through `0013_human_decisions`. Do not recreate completed Phase 10 orchestration or the initial Phase 11 decision/authority implementation.
+- On a fresh machine or account, inspect `git status` and recent history, install locked dependencies if needed, and treat verification recorded below as historical until rerun locally.
 
 ## Next implementation order
 
-Finish the Phase 9 exit work above, then continue to Phase 10 — Disposition, specialists, and orchestrator. Production OIDC, object storage, and malware-scanning selections remain the external-integration limitations recorded in Phases 1–2.
+Continue Phase 11 — Human governance and response lifecycle. Governance routing, exact authority validation, and separate human decisions are implemented. Next implement response proposal/simulation, explicit authorization linkage, execution-status observation, and outcome evidence; then close/reopen integration and learning/calibration records. Production OIDC, object storage, and malware-scanning selections remain the external-integration limitations recorded in Phases 1–2.

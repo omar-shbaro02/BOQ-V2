@@ -15,7 +15,7 @@ def test_taxonomies_are_published() -> None:
     response = client.get("/api/v1/meta/taxonomies")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "1.0.0"
+    assert payload["schema_version"] == "1.1.0"
     assert payload["taxonomies"]["Disposition"] == [
         "NO_ACTION",
         "MONITOR",

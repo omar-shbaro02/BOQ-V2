@@ -49,6 +49,8 @@ class DecisionCaseRead(CaseApiModel):
     last_cost_assessment_id: uuid.UUID | None
     last_forecast_projection_id: uuid.UUID | None
     last_impact_assessment_id: uuid.UUID | None
+    last_orchestration_run_id: uuid.UUID | None
+    last_human_decision_id: uuid.UUID | None
     outcome_reference: str | None
     close_reason: str | None
     closed_at: datetime | None

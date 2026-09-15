@@ -72,6 +72,16 @@ The MVP runs in shadow/advisory mode for one active project and 5–10 meaningfu
 
 The first meaningful milestone is reached only when all five frozen synthetic cases produce acceptable results and all governance hard gates pass.
 
-### Consequence and priority workbench (Phase 9, in progress)
+### Consequence and priority workbench (Phase 9)
 
-Open `/impact` to load a Decision Case, select snapshot-bound progress/schedule/cost results, and assess consequence, confidence, five decision clocks, and priority. The history shows policy/formula versions, ranking reasons, consequence lineage, and upstream restrictions. Dates and response durations are explicit planning inputs in calendar days. A missing deadline leaves the urgency margin unknown. Phase 9 still requires the remaining confidence/recovery governance work and a live migration rehearsal; see `docs/IMPLEMENTATION_STATUS.md`.
+Open `/impact` to load a Decision Case, select snapshot-bound progress/schedule/cost/forecast results, and assess consequence, confidence, five decision clocks, and priority. The history shows policy/formula versions, ranking reasons, consequence lineage, recovery qualification, approved confidence overrides, and upstream restrictions. Dates and response durations are explicit planning inputs in calendar days. A missing deadline leaves the urgency margin unknown.
+
+### Specialist orchestration (Phase 10)
+
+The orchestration API creates immutable, idempotent runs bound to one case snapshot and records all five bounded specialist contracts. It assembles deterministic disposition candidates and a structured case brief, stops safely when impact evidence is missing or restricted, and always routes authority to human review. Recommendation output cannot record a human decision, authorize a response, alter a baseline/budget, or commit spend or contractual positions.
+
+Open `/orchestration` to select case-bound specialist results, run or retry deterministic coordination on an immutable snapshot, and inspect specialist status, contradiction stops, disposition alternatives, blockers, and the structured case brief.
+
+### Human governance (Phase 11, in progress)
+
+Human decisions are stored separately from system recommendations and require an active authority grant matching the actor, disposition, case scope, validity window, and any amount/currency limit. Agreement or disagreement with the recommendation is explicit, and every accepted decision is append-only, audited, and routed to the appropriate approval or escalation state.

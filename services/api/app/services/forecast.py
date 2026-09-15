@@ -9,7 +9,6 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.auth import ActorContext
-from app.services.recovery import utc
 from app.forecast_schemas import ForecastCreate, ForecastPolicyCreate
 from app.generated.taxonomies import (
     ActiveResponseStatus,
@@ -40,6 +39,7 @@ from app.models import (
 )
 from app.services.audit import record_audit
 from app.services.cases import add_ledger, audit_case, require_version, scoped_case
+from app.services.recovery import utc
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session

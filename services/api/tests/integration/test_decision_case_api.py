@@ -2180,14 +2180,112 @@ def test_impact_preserves_schedule_gates_and_independent_clocks(case_api, weak, 
         "expected_version": response.json()["case"]["version"],
         "consequence_date": None,
     }
-    untimed = client.post(
-        url, headers={**headers, "Idempotency-Key": "untimed"}, json=untimed_body
-    )
+    untimed = client.post(url, headers={**headers, "Idempotency-Key": "untimed"}, json=untimed_body)
     assert untimed.status_code == 201, untimed.text
     untimed_result = untimed.json()["assessment"]
     assert untimed_result["urgency_margin_days"] is None
     assert any(x["code"] == "NO_DECISION_DEADLINE" for x in untimed_result["limitations"])
     assert untimed_result["assessment_status"] == ("VERIFICATION_REQUIRED" if weak else "LIMITED")
+
+
+@pytest.mark.parametrize(
+    ("weak", "commercial_effect"),
+    [(False, "NONE"), (False, "PREPAYMENT"), (True, "NONE")],
+)
+def test_impact_cost_and_commercial_paths_preserve_gates_and_lineage(
+    case_api, weak, commercial_effect
+):
+    client, _ = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    signal = add_evidence(client, project_id, headers, object_id)
+    truth_type = "REPORTED_CLAIM" if weak else "VERIFIED_FACT"
+    actual_evidence, actual = cost_record(
+        client,
+        project_id,
+        headers,
+        object_id,
+        kind="ACTUAL",
+        amount="50",
+        effect=commercial_effect,
+        explanation=(
+            "Advance payment precedes earned production"
+            if commercial_effect == "PREPAYMENT"
+            else None
+        ),
+        truth_type=truth_type,
+    )
+    earned_evidence, earned = cost_record(
+        client,
+        project_id,
+        headers,
+        object_id,
+        kind="EARNED_VALUE",
+        amount="25",
+        truth_type=truth_type,
+    )
+    marker = f"impact-cost-{weak}-{commercial_effect}"
+    case = open_case(client, project_id, headers, signal, marker)
+    activate_budget(client, project_id, headers)
+    case = attach(
+        client,
+        project_id,
+        headers,
+        case,
+        [actual_evidence["id"], earned_evidence["id"]],
+    )
+    frozen = snapshot(client, project_id, headers, case, f"{marker}-snapshot")
+    upstream = assess_cost_case(
+        client,
+        project_id,
+        headers,
+        case,
+        frozen,
+        object_id,
+        [actual["id"], earned["id"]],
+        marker,
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/decision-cases/{case['id']}/impact-assessments",
+        headers={**headers, "Idempotency-Key": marker},
+        json={
+            "expected_version": upstream["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "controlled_object_id": object_id,
+            "cost_assessment_id": upstream["assessment"]["id"],
+            "consequence_date": (
+                datetime.fromisoformat(frozen["snapshot"]["data_date"]).date() + timedelta(days=30)
+            ).isoformat(),
+        },
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()["assessment"]
+    if weak:
+        assert result["assessment_status"] == "VERIFICATION_REQUIRED"
+        assert result["consequence_severity"] == "NONE"
+        assert not result["consequence_paths"]
+        limitation = next(x for x in result["limitations"] if x["code"] == "COST_INPUT_RESTRICTED")
+        assert limitation["source_id"] == upstream["assessment"]["id"]
+    elif commercial_effect == "NONE":
+        assert result["assessment_status"] == "ASSESSED"
+        assert result["consequence_severity"] == "CRITICAL"
+        cost_path = next(x for x in result["consequence_paths"] if x["type"] == "COST_EXPOSURE")
+        assert cost_path["amount"] == "100.0000"
+        assert cost_path["currency"] == "USD"
+        assert cost_path["source_result_id"] == upstream["assessment"]["id"]
+        assert set(cost_path["input_evidence_ids"]) == {
+            actual_evidence["id"],
+            earned_evidence["id"],
+        }
+    else:
+        assert result["assessment_status"] == "ASSESSED"
+        assert result["consequence_severity"] == "NONE"
+        assert not any(x["type"] == "COST_EXPOSURE" for x in result["consequence_paths"])
+        commercial = next(
+            x for x in result["consequence_paths"] if x["type"] == "COMMERCIAL_EXPOSURE"
+        )
+        assert commercial["effect"]["type"] == "PREPAYMENT"
+        assert commercial["source_result_id"] == upstream["assessment"]["id"]
+        assert "no entitlement or liability" in commercial["conclusion_boundary"]
 
 
 @pytest.mark.parametrize(
@@ -2275,6 +2373,108 @@ def test_forecast_only_impact_preserves_confidence_lineage_and_scenario_limits(
     assert mixed.json()["assessment"]["overall_confidence"] == result["overall_confidence"]
 
 
+def test_confidence_override_requires_exact_ceiling_and_keeps_reviewer_provenance(case_api):
+    client, sessions = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    case, frozen, evaluation, _ = prepare_production_forecast_case(
+        client, sessions, project_id, headers, object_id, "0.4"
+    )
+    data_date = datetime.fromisoformat(frozen["snapshot"]["data_date"]).date()
+    base_url = f"/api/v1/projects/{project_id}/decision-cases/{case['id']}"
+    forecast_response = client.post(
+        f"{base_url}/forecasts",
+        headers={**headers, "Idempotency-Key": "override-source-forecast"},
+        json={
+            "expected_version": case["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "controlled_object_id": object_id,
+            "target": "PRODUCTION_COMPLETION_DATE",
+            "scenario_type": "CONTINUED_PERFORMANCE",
+            "horizon_end": (data_date + timedelta(days=60)).isoformat(),
+            "progress_evaluation_id": evaluation["id"],
+            "assumptions": ["Current production trend continues"],
+        },
+    )
+    assert forecast_response.status_code == 201, forecast_response.text
+    forecast = forecast_response.json()["forecast"]
+    assessment_body = {
+        "expected_version": forecast_response.json()["case"]["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "controlled_object_id": object_id,
+        "forecast_projection_ids": [forecast["id"]],
+        "consequence_date": (data_date + timedelta(days=30)).isoformat(),
+    }
+    initial = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "override-baseline"},
+        json=assessment_body,
+    )
+    assert initial.status_code == 201, initial.text
+    ceiling = initial.json()["assessment"]["upstream_confidence_ceiling"]
+    override_response = client.post(
+        f"{base_url}/confidence-overrides",
+        headers=headers,
+        json={
+            "expected_version": initial.json()["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "upstream_ceiling": ceiling,
+            "approved_confidence": "0.65",
+            "justification": "Reviewer accepts independent field verification evidence",
+        },
+    )
+    assert override_response.status_code == 201, override_response.text
+    override = override_response.json()["override"]
+    assert override["approved_by"] == headers["X-VAI-Actor-ID"]
+    assert override["justification"] == ("Reviewer accepts independent field verification evidence")
+    applied = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "override-applied"},
+        json={
+            **assessment_body,
+            "expected_version": override_response.json()["case"]["version"],
+            "confidence_override_id": override["id"],
+        },
+    )
+    assert applied.status_code == 201, applied.text
+    result = applied.json()["assessment"]
+    assert result["overall_confidence"] == "0.650000"
+    assert result["upstream_confidence_ceiling"] == ceiling
+    assert "APPROVED_CONFIDENCE_OVERRIDE" in result["priority_reason_codes"]
+    recorded = client.get(f"{base_url}/confidence-overrides", headers=headers)
+    assert recorded.status_code == 200
+    assert recorded.json() == [override]
+    ledger = client.get(f"{base_url}/ledger", headers=headers)
+    assert any(
+        item["event_type"] == "CONFIDENCE_OVERRIDE_APPROVED"
+        and item["details"]["override_id"] == override["id"]
+        for item in ledger.json()
+    )
+
+    mismatched = client.post(
+        f"{base_url}/confidence-overrides",
+        headers=headers,
+        json={
+            "expected_version": applied.json()["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "upstream_ceiling": "0.3",
+            "approved_confidence": "0.7",
+            "justification": "Deliberately mismatched ceiling for governance regression",
+        },
+    )
+    assert mismatched.status_code == 201, mismatched.text
+    rejected = client.post(
+        f"{base_url}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "override-mismatch"},
+        json={
+            **assessment_body,
+            "expected_version": mismatched.json()["case"]["version"],
+            "confidence_override_id": mismatched.json()["override"]["id"],
+        },
+    )
+    assert rejected.status_code == 422
+    assert "computed ceiling" in rejected.json()["detail"]
+
+
 @pytest.mark.parametrize("mode", ["qualified", "no_comparison", "failed", "expired", "no_benefit"])
 def test_recovery_reduction_requires_current_comparable_projected_benefit(case_api, mode):
     from app.models import CaseActiveResponse
@@ -2301,15 +2501,19 @@ def test_recovery_reduction_requires_current_comparable_projected_benefit(case_a
         "progress_evaluation_id": evaluation["id"],
     }
     baseline = client.post(
-        f"{base_url}/forecasts", headers={**headers, "Idempotency-Key": "recovery-baseline"},
+        f"{base_url}/forecasts",
+        headers={**headers, "Idempotency-Key": "recovery-baseline"},
         json=payload,
     )
     assert baseline.status_code == 201, baseline.text
     active = client.post(
-        f"{base_url}/forecasts", headers={**headers, "Idempotency-Key": "recovery-active"},
+        f"{base_url}/forecasts",
+        headers={**headers, "Idempotency-Key": "recovery-active"},
         json={
-            **payload, "expected_version": baseline.json()["case"]["version"],
-            "scenario_type": "ACTIVE_RESPONSE", "active_response_id": response_id,
+            **payload,
+            "expected_version": baseline.json()["case"]["version"],
+            "scenario_type": "ACTIVE_RESPONSE",
+            "active_response_id": response_id,
         },
     )
     assert active.status_code == 201, active.text
@@ -2334,7 +2538,8 @@ def test_recovery_reduction_requires_current_comparable_projected_benefit(case_a
     }
     result = client.post(
         f"{base_url}/impact-assessments",
-        headers={**headers, "Idempotency-Key": "recovery-impact"}, json=impact_body,
+        headers={**headers, "Idempotency-Key": "recovery-impact"},
+        json=impact_body,
     )
     assert result.status_code == 201, result.text
     assessment = result.json()["assessment"]
@@ -2361,7 +2566,395 @@ def test_recovery_reduction_requires_current_comparable_projected_benefit(case_a
         assert forecasts[1]["validity"] == "RECALCULATION_REQUIRED"
     replay = client.post(
         f"{base_url}/impact-assessments",
-        headers={**headers, "Idempotency-Key": "recovery-impact"}, json=impact_body,
+        headers={**headers, "Idempotency-Key": "recovery-impact"},
+        json=impact_body,
     )
     assert replay.status_code == 201
     assert replay.json()["assessment"] == assessment
+
+
+def test_orchestration_stops_safely_without_impact_and_is_idempotent(case_api):
+    client, _ = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    signal = add_evidence(client, project_id, headers, object_id)
+    case = open_case(client, project_id, headers, signal, "orchestration-stop")
+    frozen = snapshot(client, project_id, headers, case, "orchestration-stop-snapshot")
+    url = f"/api/v1/projects/{project_id}/decision-cases/{case['id']}/orchestration-runs"
+    body = {
+        "expected_version": frozen["case"]["version"],
+        "snapshot_id": frozen["snapshot"]["id"],
+        "requested_questions": ["What supported management disposition is available?"],
+    }
+    response = client.post(
+        url, headers={**headers, "Idempotency-Key": "orchestration-stop"}, json=body
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    run = result["run"]
+    assert run["status"] == "STOPPED"
+    assert run["readiness"] == "VERIFICATION_REQUIRED"
+    assert run["recommended_disposition"] == "VERIFY"
+    assert run["blockers"][0]["code"] == "IMPACT_ASSESSMENT_REQUIRED"
+    assert len(run["specialist_runs"]) == 5
+    assert {item["specialist_kind"] for item in run["specialist_runs"]} == {
+        "EVIDENCE_PROGRESS",
+        "SCHEDULE_DEPENDENCY",
+        "COST_COMMERCIAL",
+        "FORECAST_SCENARIO",
+        "IMPACT_PRIORITY",
+    }
+    assert all(item["status"] == "LIMITED" for item in run["specialist_runs"])
+    assert "RECORD_HUMAN_DECISION" in run["case_brief"]["prohibited_autonomous_actions"]
+    replay = client.post(
+        url, headers={**headers, "Idempotency-Key": "orchestration-stop"}, json=body
+    )
+    assert replay.status_code == 201
+    assert replay.json()["run"]["id"] == run["id"]
+    mismatch = client.post(
+        url,
+        headers={**headers, "Idempotency-Key": "orchestration-stop"},
+        json={**body, "requested_questions": ["Different question"]},
+    )
+    assert mismatch.status_code == 409
+    stale = client.post(
+        url,
+        headers={**headers, "Idempotency-Key": "orchestration-stale"},
+        json=body,
+    )
+    assert stale.status_code == 409
+    outsider = client.get(url, headers={**headers, "X-VAI-Actor-ID": "outsider"})
+    assert outsider.status_code == 403
+    retry = client.post(
+        url,
+        headers={**headers, "Idempotency-Key": "orchestration-stop-retry"},
+        json={
+            **body,
+            "expected_version": result["case"]["version"],
+            "retry_of_run_id": run["id"],
+        },
+    )
+    assert retry.status_code == 201, retry.text
+    retried = retry.json()["run"]
+    assert retried["retry_of_run_id"] == run["id"]
+    assert retried["snapshot_id"] == run["snapshot_id"]
+    assert retried["run_number"] == 2
+    assert {item["attempt"] for item in retried["specialist_runs"]} == {2}
+
+
+def test_orchestration_assembles_supported_disposition_and_specialist_boundaries(
+    case_api, monkeypatch
+):
+    client, _ = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    signal = add_evidence(client, project_id, headers, object_id)
+    delay = schedule_delay_evidence(client, project_id, headers, object_id, delay_days="3")
+    case = open_case(client, project_id, headers, signal, "orchestration-supported")
+    activate_schedule_network(client, project_id, headers, schedule_payload())
+    case = attach(client, project_id, headers, case, [delay["id"]])
+    frozen = snapshot(client, project_id, headers, case, "orchestration-supported-snapshot")
+    schedule = assess_schedule_case(
+        client,
+        project_id,
+        headers,
+        case,
+        frozen,
+        object_id,
+        delay["id"],
+        "orchestration-supported-schedule",
+    )
+    data_date = datetime.fromisoformat(frozen["snapshot"]["data_date"]).date()
+    base = f"/api/v1/projects/{project_id}/decision-cases/{case['id']}"
+    impact = client.post(
+        f"{base}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "orchestration-supported-impact"},
+        json={
+            "expected_version": schedule["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "controlled_object_id": object_id,
+            "schedule_assessment_id": schedule["assessment"]["id"],
+            "consequence_date": (data_date + timedelta(days=30)).isoformat(),
+        },
+    )
+    assert impact.status_code == 201, impact.text
+    response = client.post(
+        f"{base}/orchestration-runs",
+        headers={**headers, "Idempotency-Key": "orchestration-supported"},
+        json={
+            "expected_version": impact.json()["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "schedule_assessment_id": schedule["assessment"]["id"],
+            "impact_assessment_id": impact.json()["assessment"]["id"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()
+    run = result["run"]
+    assert run["status"] == "LIMITED"
+    assert run["readiness"] == "DECISION_READY_WITH_LIMITATIONS"
+    assert run["recommended_disposition"] == "INTERVENE"
+    assert run["case_brief"]["authority_route"] == "APPROVAL_REQUIRED"
+    assert run["case_brief"]["recommended_disposition"] == "INTERVENE"
+    assert len(run["alternative_dispositions"]) == 5
+    assert sum(item["selected"] for item in run["alternative_dispositions"]) == 1
+    specialist = {item["specialist_kind"]: item for item in run["specialist_runs"]}
+    assert specialist["SCHEDULE_DEPENDENCY"]["status"] == "SUCCEEDED"
+    assert specialist["SCHEDULE_DEPENDENCY"]["output_references"] == {
+        "schedule_assessment_id": schedule["assessment"]["id"]
+    }
+    assert specialist["IMPACT_PRIORITY"]["status"] == "SUCCEEDED"
+    assert specialist["IMPACT_PRIORITY"]["output_references"] == {
+        "impact_assessment_id": impact.json()["assessment"]["id"]
+    }
+    history = client.get(f"{base}/orchestration-runs", headers=headers)
+    assert history.status_code == 200
+    assert history.json()[0]["id"] == run["id"]
+    ledger = client.get(f"{base}/ledger", headers=headers).json()
+    assert {"ORCHESTRATION_RUN_STARTED", "ORCHESTRATION_RUN_COMPLETED"} <= {
+        item["event_type"] for item in ledger
+    }
+    validation_url = f"{base}/orchestration-runs/{run['id']}/validate-narrative"
+    faithful = client.post(
+        validation_url,
+        headers=headers,
+        json={"narrative": "Recommended disposition: INTERVENE. Human review is required."},
+    )
+    assert faithful.status_code == 200
+    assert faithful.json()["valid"] is True
+    invalid = client.post(
+        validation_url,
+        headers=headers,
+        json={
+            "narrative": (
+                "Recommended disposition: NO_ACTION. The AI approved an automatic response "
+                "costing 999 dollars."
+            )
+        },
+    )
+    assert invalid.status_code == 200
+    assert invalid.json()["valid"] is False
+    assert {item["code"] for item in invalid.json()["violations"]} == {
+        "DISPOSITION_DRIFT",
+        "UNSUPPORTED_AUTHORITY_CLAIM",
+        "UNSUPPORTED_NUMBER",
+    }
+    import app.services.orchestration as orchestration_service
+
+    original_specialist = orchestration_service._specialist
+
+    def fail_impact(run_value, kind, value, **kwargs):
+        if kind == "IMPACT_PRIORITY":
+            raise RuntimeError("simulated adapter failure")
+        return original_specialist(run_value, kind, value, **kwargs)
+
+    monkeypatch.setattr(orchestration_service, "_specialist", fail_impact)
+    failed = client.post(
+        f"{base}/orchestration-runs",
+        headers={**headers, "Idempotency-Key": "orchestration-impact-failure"},
+        json={
+            "expected_version": result["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "retry_of_run_id": run["id"],
+            "schedule_assessment_id": schedule["assessment"]["id"],
+            "impact_assessment_id": impact.json()["assessment"]["id"],
+        },
+    )
+    assert failed.status_code == 201, failed.text
+    failed_run = failed.json()["run"]
+    assert failed_run["status"] == "STOPPED"
+    assert failed_run["readiness"] == "VERIFICATION_REQUIRED"
+    assert failed_run["recommended_disposition"] == "VERIFY"
+    failed_impact = next(
+        item
+        for item in failed_run["specialist_runs"]
+        if item["specialist_kind"] == "IMPACT_PRIORITY"
+    )
+    assert failed_impact["status"] == "FAILED"
+    assert failed_impact["error_class"] == "RuntimeError"
+    assert failed_impact["output_references"] == {}
+    assert Decimal(failed_impact["confidence"]) == 0
+    assert any(item["code"] == "CRITICAL_SPECIALIST_FAILED" for item in failed_run["blockers"])
+    grant = client.post(
+        f"/api/v1/projects/{project_id}/authority-grants",
+        headers=headers,
+        json={
+            "actor_id": headers["X-VAI-Actor-ID"],
+            "authority_type": "CASE_DISPOSITION",
+            "controlled_object_id": object_id,
+            "max_amount": "100",
+            "currency": "USD",
+            "escalation_level": 1,
+        },
+    )
+    assert grant.status_code == 201, grant.text
+    decision_url = f"{base}/human-decisions"
+    decision_body = {
+        "expected_version": failed.json()["case"]["version"],
+        "orchestration_run_id": run["id"],
+        "authority_grant_id": grant.json()["id"],
+        "disposition": "INTERVENE",
+        "recommendation_agreement": "AGREE",
+        "rationale": "Decision owner accepts the supported schedule intervention recommendation",
+        "decision_amount": "50",
+        "currency": "USD",
+        "response_authorization_reference": "AUTH-RESPONSE-001",
+    }
+    mismatch_agreement = client.post(
+        decision_url,
+        headers={**headers, "Idempotency-Key": "human-decision-mismatch"},
+        json={**decision_body, "disposition": "MONITOR"},
+    )
+    assert mismatch_agreement.status_code == 422
+    denied = client.post(
+        decision_url,
+        headers={**headers, "Idempotency-Key": "human-decision-denied"},
+        json={**decision_body, "authority_grant_id": str(uuid.uuid4())},
+    )
+    assert denied.status_code == 403
+    decided = client.post(
+        decision_url,
+        headers={**headers, "Idempotency-Key": "human-decision-approved"},
+        json=decision_body,
+    )
+    assert decided.status_code == 201, decided.text
+    decision = decided.json()["decision"]
+    assert decision["disposition"] == "INTERVENE"
+    assert decision["recommendation_agreement"] == "AGREE"
+    assert decision["decided_by"] == headers["X-VAI-Actor-ID"]
+    assert decision["authority_outcome"] == "AUTHORIZED"
+    assert decision["authority_scope"]["max_amount"] == "100.0000"
+    assert decided.json()["case"]["lifecycle"] == "HUMAN_DISPOSITION"
+    assert decided.json()["case"]["governance_state"] == "APPROVAL_REQUIRED"
+    replayed = client.post(
+        decision_url,
+        headers={**headers, "Idempotency-Key": "human-decision-approved"},
+        json=decision_body,
+    )
+    assert replayed.status_code == 201
+    assert replayed.json()["decision"]["id"] == decision["id"]
+    outsider = client.post(
+        decision_url,
+        headers={
+            **headers,
+            "X-VAI-Actor-ID": "analyst-service@example.test",
+            "Idempotency-Key": "human-decision-outsider",
+        },
+        json={**decision_body, "expected_version": decided.json()["case"]["version"]},
+    )
+    assert outsider.status_code == 403
+    history = client.get(decision_url, headers=headers)
+    assert history.status_code == 200
+    assert history.json() == [decision]
+    ledger = client.get(f"{base}/ledger", headers=headers).json()
+    assert any(
+        item["event_type"] == "HUMAN_DECISION_RECORDED"
+        and item["details"]["decision_id"] == decision["id"]
+        for item in ledger
+    )
+
+
+def test_orchestration_stops_on_material_cross_specialist_contradiction(case_api):
+    client, _ = case_api
+    _, project_id, headers, object_id = bootstrap(client)
+    signal = add_evidence(client, project_id, headers, object_id)
+    delay = schedule_delay_evidence(
+        client,
+        project_id,
+        headers,
+        object_id,
+        delay_days="3",
+        semantic_state="REPORTED",
+        truth_type="CONTRADICTED",
+    )
+    case = open_case(client, project_id, headers, signal, "orchestration-contradiction")
+    activate_schedule_network(client, project_id, headers, schedule_payload())
+    case = attach(client, project_id, headers, case, [delay["id"]])
+    frozen = snapshot(client, project_id, headers, case, "orchestration-contradiction-snapshot")
+    schedule = assess_schedule_case(
+        client,
+        project_id,
+        headers,
+        case,
+        frozen,
+        object_id,
+        delay["id"],
+        "orchestration-contradiction-schedule",
+    )
+    assert schedule["assessment"]["truth_type"] == "CONTRADICTED"
+    impact = client.post(
+        f"/api/v1/projects/{project_id}/decision-cases/{case['id']}/impact-assessments",
+        headers={**headers, "Idempotency-Key": "orchestration-contradiction-impact"},
+        json={
+            "expected_version": schedule["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "controlled_object_id": object_id,
+            "schedule_assessment_id": schedule["assessment"]["id"],
+            "consequence_date": (
+                datetime.fromisoformat(frozen["snapshot"]["data_date"]).date() + timedelta(days=10)
+            ).isoformat(),
+        },
+    )
+    assert impact.status_code == 201, impact.text
+    response = client.post(
+        f"/api/v1/projects/{project_id}/decision-cases/{case['id']}/orchestration-runs",
+        headers={**headers, "Idempotency-Key": "orchestration-contradiction"},
+        json={
+            "expected_version": impact.json()["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "schedule_assessment_id": schedule["assessment"]["id"],
+            "impact_assessment_id": impact.json()["assessment"]["id"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    run = response.json()["run"]
+    assert run["status"] == "STOPPED"
+    assert run["readiness"] == "VERIFICATION_REQUIRED"
+    assert run["recommended_disposition"] == "VERIFY"
+    contradiction = next(item for item in run["contradiction_findings"] if item["type"] == "SOURCE")
+    assert contradiction["status"] == "UNRESOLVED"
+    assert contradiction["material"] is True
+    assert "DISPOSITION" in contradiction["downstream_invalidations"]
+    assert any(item["code"] == "UNRESOLVED_SPECIALIST_CONTRADICTION" for item in run["blockers"])
+    assert run["case_brief"]["evidence_request"]["required"] is True
+    assert all(
+        contradiction in specialist["contradictions"] for specialist in run["specialist_runs"]
+    )
+    resolution_response = client.post(
+        (
+            f"/api/v1/projects/{project_id}/decision-cases/{case['id']}"
+            f"/orchestration-runs/{run['id']}/contradiction-resolutions"
+        ),
+        headers=headers,
+        json={
+            "expected_version": response.json()["case"]["version"],
+            "contradiction_index": run["contradiction_findings"].index(contradiction),
+            "selected_result_id": schedule["assessment"]["id"],
+            "rejected_result_ids": [],
+            "resolution_basis": (
+                "Reviewer selected the schedule result for re-verification and revalidation"
+            ),
+        },
+    )
+    assert resolution_response.status_code == 201, resolution_response.text
+    resolution = resolution_response.json()["resolution"]
+    assert resolution["resolved_by"] == headers["X-VAI-Actor-ID"]
+    assert resolution["downstream_invalidations"] == contradiction["downstream_invalidations"]
+    retry = client.post(
+        f"/api/v1/projects/{project_id}/decision-cases/{case['id']}/orchestration-runs",
+        headers={**headers, "Idempotency-Key": "orchestration-contradiction-retry"},
+        json={
+            "expected_version": resolution_response.json()["case"]["version"],
+            "snapshot_id": frozen["snapshot"]["id"],
+            "retry_of_run_id": run["id"],
+            "contradiction_resolution_ids": [resolution["id"]],
+            "schedule_assessment_id": schedule["assessment"]["id"],
+            "impact_assessment_id": impact.json()["assessment"]["id"],
+        },
+    )
+    assert retry.status_code == 201, retry.text
+    retried = retry.json()["run"]
+    resolved = next(item for item in retried["contradiction_findings"] if item["type"] == "SOURCE")
+    assert resolved["status"] == "RESOLVED_REVALIDATION_REQUIRED"
+    assert resolved["resolution_id"] == resolution["id"]
+    assert retried["status"] == "STOPPED"
+    assert retried["recommended_disposition"] == "VERIFY"
+    assert any(item["code"] == "SCHEDULE_INPUT_RESTRICTED" for item in retried["blockers"])

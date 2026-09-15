@@ -22,12 +22,21 @@ type ConfidenceOverride = {
   id: string; snapshot_id: string; upstream_ceiling: string; approved_confidence: string;
   justification: string; approved_by: string; approved_at: string;
 };
+type SpecialistResult = {
+  id: string; snapshot_id: string; controlled_object_id: string;
+  assessment_number?: number; evaluation_number?: number; target?: string; scenario_type?: string;
+  assessment_status?: string; reconciliation_status?: string; validity?: string;
+};
 
 export function ImpactWorkbench() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [history, setHistory] = useState<Assessment[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [overrides, setOverrides] = useState<ConfidenceOverride[]>([]);
+  const [progressResults, setProgressResults] = useState<SpecialistResult[]>([]);
+  const [scheduleResults, setScheduleResults] = useState<SpecialistResult[]>([]);
+  const [costResults, setCostResults] = useState<SpecialistResult[]>([]);
+  const [forecasts, setForecasts] = useState<SpecialistResult[]>([]);
   const [version, setVersion] = useState(1);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -39,13 +48,18 @@ export function ImpactWorkbench() {
     return value;
   }
   async function load(active: Connection) {
-    const [items, configured, current, recordedOverrides] = await Promise.all([
+    const [items, configured, current, recordedOverrides, progress, schedule, cost, forecast] = await Promise.all([
       fetch(`${base(active)}/decision-cases/${active.caseId}/impact-assessments`, { headers: headers(active) }).then(checked),
       fetch(`${base(active)}/impact/policies`, { headers: headers(active) }).then(checked),
       fetch(`${base(active)}/decision-cases/${active.caseId}`, { headers: headers(active) }).then(checked),
       fetch(`${base(active)}/decision-cases/${active.caseId}/confidence-overrides`, { headers: headers(active) }).then(checked),
+      fetch(`${base(active)}/decision-cases/${active.caseId}/progress-evaluations`, { headers: headers(active) }).then(checked),
+      fetch(`${base(active)}/decision-cases/${active.caseId}/schedule-assessments`, { headers: headers(active) }).then(checked),
+      fetch(`${base(active)}/decision-cases/${active.caseId}/cost-assessments`, { headers: headers(active) }).then(checked),
+      fetch(`${base(active)}/decision-cases/${active.caseId}/forecasts`, { headers: headers(active) }).then(checked),
     ]);
     setHistory(items); setPolicies(configured); setVersion(current.version); setOverrides(recordedOverrides);
+    setProgressResults(progress); setScheduleResults(schedule); setCostResults(cost); setForecasts(forecast);
   }
   async function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -61,8 +75,7 @@ export function ImpactWorkbench() {
       if (form.get(key)) body[key] = String(form.get(key));
     }
     for (const key of ["verification_duration_days", "approval_duration_days", "mobilization_duration_days"]) body[key] = Number(form.get(key));
-    body.forecast_projection_ids = String(form.get("forecast_projection_ids") ?? "")
-      .split(",").map(value => value.trim()).filter(Boolean);
+    body.forecast_projection_ids = form.getAll("forecast_projection_ids").map(String);
     setBusy(true); setMessage(null);
     try {
       await checked(await fetch(`${base(connection)}/decision-cases/${connection.caseId}/impact-assessments`, { method: "POST", headers: { ...headers(connection), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) }));
@@ -94,8 +107,10 @@ export function ImpactWorkbench() {
     {connection && <section className="workbench-card full-width"><h2>Create assessment</h2><p>Case version {version}. Select at least one specialist result from the same snapshot and controlled object. Clock durations are explicit planning inputs in calendar days.</p>
       <form className="inline-form" onSubmit={assess}>
         <label>Snapshot UUID<input name="snapshot_id" required /></label><label>Controlled object UUID<input name="controlled_object_id" required /></label>
-        <label>Schedule assessment UUID<input name="schedule_assessment_id" /></label><label>Cost assessment UUID<input name="cost_assessment_id" /></label><label>Progress evaluation UUID<input name="progress_evaluation_id" /></label>
-        <label>Forecast UUIDs (comma separated)<input name="forecast_projection_ids" /></label>
+        <label>Schedule assessment<select name="schedule_assessment_id"><option value="">None</option>{scheduleResults.map(item => <option key={item.id} value={item.id}>#{item.assessment_number} · {item.assessment_status} · snapshot {item.snapshot_id}</option>)}</select></label>
+        <label>Cost assessment<select name="cost_assessment_id"><option value="">None</option>{costResults.map(item => <option key={item.id} value={item.id}>#{item.assessment_number} · {item.assessment_status} · snapshot {item.snapshot_id}</option>)}</select></label>
+        <label>Progress evaluation<select name="progress_evaluation_id"><option value="">None</option>{progressResults.map(item => <option key={item.id} value={item.id}>#{item.evaluation_number} · {item.reconciliation_status} · snapshot {item.snapshot_id}</option>)}</select></label>
+        <label>Forecasts and recovery comparisons<select name="forecast_projection_ids" multiple size={Math.min(6, Math.max(2, forecasts.length))}>{forecasts.map(item => <option key={item.id} value={item.id}>{item.target} · {item.scenario_type} · {item.validity} · snapshot {item.snapshot_id}</option>)}</select></label>
         <label>Approved confidence override<select name="confidence_override_id"><option value="">None</option>{overrides.map(item => <option key={item.id} value={item.id}>{item.id} · {item.upstream_ceiling} → {item.approved_confidence}</option>)}</select></label>
         <label>Consequence date<input name="consequence_date" type="date" /></label><label>Recovery window end<input name="recovery_window_end" type="date" /></label>
         {[["verification_duration_days", "Verification days"], ["approval_duration_days", "Approval days"], ["mobilization_duration_days", "Mobilization days"]].map(([name, label]) => <label key={name}>{label}<input name={name} type="number" min="0" max="365" defaultValue="0" required /></label>)}
