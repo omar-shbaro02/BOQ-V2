@@ -14,10 +14,14 @@ The implementation status is the handoff source of truth. Earlier phase verifica
 ## Current delivery position
 
 - Phases 0 through 10 are complete.
-- Phase 11, Human governance and response lifecycle, is in progress.
-- The first Phase 11 slice is complete: immutable human decisions, exact authority-grant validation, governance routing, audit/ledger provenance, API history, migration `0013_human_decisions`, and focused/live migration verification.
-- Resume with response proposal/simulation, explicit authorization linkage, execution-status observation, and outcome evidence. Then implement close/reopen integration and learning/calibration records.
-- Phases 12 through 14 remain after Phase 11.
+- Phase 11, Human governance and response lifecycle, is complete.
+- Governed response proposals, exact authorization linkage, execution-status observation, evidence-backed outcomes, close/reopen integration, immutable learning/calibration, outbox/audit/ledger provenance, and migrations through `0015_learning_records` are complete.
+- Phase 12 is in progress. Its initial consolidated attention queue and all five governed JSON report projections are implemented with a responsive `/decision-center` UI.
+- Phase 12 now includes seven dedicated review queues, project-timezone deadline presentation, and the Phase 11 governance/response/outcome/learning controls in full case detail.
+- Phase 12 technical work now includes deterministic report hashes/fidelity manifests, semantic Decision Queue CSV, session-scoped saved context/filters, visible focus behavior, and an operator protocol at `docs/15-operator-usability-protocol.md`.
+- Resume by conducting and documenting representative human operator sessions. Do not mark Phase 12 complete from automated evidence alone; begin Phase 13 only after the protocol acceptance evidence passes.
+- Windows and Linux local-evaluation installers are available through `make package-installers`; runtime and security limitations are documented in `docs/16-local-installer.md`.
+- Phases 12 through 14 remain.
 
 Update `docs/IMPLEMENTATION_STATUS.md` whenever a meaningful slice is completed. Keep its remaining-phase count and next implementation order accurate.
 

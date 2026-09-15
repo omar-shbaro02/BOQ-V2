@@ -23,6 +23,12 @@ The handoff freezes product meaning but intentionally leaves engineering choices
 | Identity provider and organization/user source | Phase 1 | security/product | local development identity only; no live data |
 | Delivery model and authority hierarchy | Phase 1 | accountable PM/governance | block protected workflows |
 | Source file/API formats and field mappings | Phase 2 | project controls/data owner | manual structured entry and rejected ambiguous imports |
+| Representative BOQ fixtures and supported Excel/PDF variants | Bootstrap B0.1 | planner + project controls/data owner | accept `.xlsx`; preserve unsupported/ambiguous sources as verification-required |
+| OCR engine, language set, confidence threshold, and retention policy | Bootstrap B0.1/PDF intake | security/product + project controls | preserve scanned PDF; do not extract authoritative rows without a governed adapter |
+| BOQ classification rules and WBS/work-package conventions | Bootstrap B0.2–B0.3 | planner + project controls | retain unknown rows and require review; do not generate activities |
+| Productivity libraries, applicability, units, and review owners | Bootstrap B0.4 | planner + construction discipline leads | unresolved duration with `VERIFICATION_REQUIRED` |
+| Construction sequence templates, dependency rules, and allowed lags | Bootstrap B0.5 | planner + discipline leads | propose only explicit/project-backed logic; fail validation where incomplete |
+| Schedule approval authority types and baseline designation policy | Bootstrap B0.7 | accountable PM/governance | proposed draft only; no authorized transition |
 | Evidence verification methods per evidence class | Phase 2 | project controls/quality authority | retain as reported claim |
 | Source reliability policy and review cadence | Phase 2 | governance/data owner | neutral prior; show limitation |
 | Signal thresholds and trend-persistence windows | Phase 3/5 | PM + project controls | create candidates for review, do not auto-strengthen disposition |
@@ -56,4 +62,3 @@ For every ADR or policy decision record:
 ## 5. Start-build rule
 
 Phase 0 may start using the proposed technical defaults. Live-project ingestion cannot start until identity, authority, data classification, retention, source mapping, and authorized-context ownership are decided. Decision performance cannot be claimed until benchmark fixtures and KPI/adjudication definitions are frozen independently of engine tuning.
-

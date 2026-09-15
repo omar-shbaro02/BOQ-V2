@@ -24,6 +24,10 @@ This matrix proves that every frozen methodology stage has an implementation and
 | 18 Commercial Story | earlier credible decisions, differentiated Decision Cases, advisory boundary | 00, 08, 11 | pilot decision brief and KPI evidence |
 | 19 Expansion/Handoff | MVP sequence and Decision-Case-led expansion | 10, 12 | phase gates and expansion approval |
 
+## Amendment A traceability
+
+The BOQ-to-Schedule Bootstrap amendment is traced in `docs/17-boq-to-schedule-bootstrap.md`. BS-001 through BS-010 are hard MVP gates. Its proposed output must enter the existing authorized-context boundary only through planner review and an exact human authority grant; it may not overwrite or silently become a current schedule or baseline.
+
 ## Cross-cutting functionality checklist
 
 - [x] Controlled project context and effective authorized versions
@@ -32,6 +36,10 @@ This matrix proves that every frozen methodology stage has an implementation and
 - [x] Decision Case lifecycle, snapshots, readiness, blocked/closed/reopened states
 - [x] Reported/executed/verified/accepted progress and measurement bases
 - [x] Schedule dependencies, milestones, optional float, and baseline validity
+- [ ] BOQ source extraction, normalization, row classification, and confidence lineage
+- [ ] Proposed WBS/work packages and BOQ-to-activity reverse traceability
+- [ ] Governed duration/productivity assumptions and configurable dependency templates
+- [ ] Deterministic bootstrap CPM, validation, planner review, approval, revision delta, and export
 - [x] Cost, commitments, actuals, BOQ/earned basis, authorized changes, and commercial boundary
 - [x] Bounded/versioned forecasts, scenarios, assumptions, horizons, and confidence decay
 - [ ] Consequence paths, confidence propagation, multi-clock urgency, and priority

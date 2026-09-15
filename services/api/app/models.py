@@ -1696,3 +1696,178 @@ class HumanDecision(Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     decided_by: Mapped[str] = mapped_column(String(200), nullable=False)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResponseProposal(Base):
+    __tablename__ = "response_proposal"
+    __table_args__ = (
+        UniqueConstraint("case_id", "proposal_number", name="uq_response_proposal_number"),
+        UniqueConstraint("case_id", "idempotency_key", name="uq_response_proposal_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    human_decision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("human_decision.id", ondelete="RESTRICT"), index=True
+    )
+    proposal_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    simulated_effects: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    requested_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    proposed_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    proposed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ResponseAuthorization(Base):
+    __tablename__ = "response_authorization"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("response_proposal.id", ondelete="RESTRICT"), unique=True
+    )
+    human_decision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("human_decision.id", ondelete="RESTRICT"), index=True
+    )
+    authority_grant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authority_grant.id", ondelete="RESTRICT"), index=True
+    )
+    authorization_reference: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    authority_scope: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    authorized_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    authorized_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ResponseExecutionObservation(Base):
+    __tablename__ = "response_execution_observation"
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "sequence_number", name="uq_response_execution_sequence"),
+        UniqueConstraint(
+            "proposal_id", "idempotency_key", name="uq_response_execution_idempotency"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("response_proposal.id", ondelete="RESTRICT"), index=True
+    )
+    authorization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("response_authorization.id", ondelete="RESTRICT"), index=True
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    evidence_item_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ResponseOutcome(Base):
+    __tablename__ = "response_outcome"
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "idempotency_key", name="uq_response_outcome_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("response_proposal.id", ondelete="RESTRICT"), index=True
+    )
+    authorization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("response_authorization.id", ondelete="RESTRICT"), index=True
+    )
+    classification: Mapped[str] = mapped_column(String(30), nullable=False)
+    evidence_item_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessed_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CaseLearningRecord(Base):
+    __tablename__ = "case_learning_record"
+    __table_args__ = (
+        UniqueConstraint("case_id", "idempotency_key", name="uq_case_learning_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    response_outcome_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("response_outcome.id", ondelete="RESTRICT"), index=True
+    )
+    human_decision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("human_decision.id", ondelete="RESTRICT"), index=True
+    )
+    orchestration_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orchestration_run.id", ondelete="RESTRICT"), index=True
+    )
+    category: Mapped[str] = mapped_column(String(30), nullable=False)
+    finding: Mapped[str] = mapped_column(Text, nullable=False)
+    contributing_factors: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    calibration: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    calibration_notes: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

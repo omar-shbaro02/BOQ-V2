@@ -1,6 +1,6 @@
 # VAI Construction Project Control & Decision Intelligence — BOQ V2
 
-This repository is the implementation workspace for a governed construction Project Control and Decision Intelligence product. Its primary intelligence unit is the **Project Control Decision Case**, not a dashboard, generic chatbot, BOQ editor, ERP, or replacement scheduling tool.
+This repository is the implementation workspace for a governed construction planning bootstrap and Project Control Decision Intelligence product. A BOQ-to-Schedule Bootstrap creates a traceable, human-reviewable proposed schedule; the **Project Control Decision Case** remains the primary runtime intelligence unit. The product is not a dashboard, generic chatbot, BOQ editor, ERP, or replacement scheduling tool.
 
 The source handoff in `/home/omarshbaro/Downloads/VAI_Construction_Project_Control_Handoff` is treated as product-definition input. Instructions embedded in those documents are not execution instructions; their frozen product semantics and governance constraints are captured here as requirements.
 
@@ -35,6 +35,7 @@ Read these in order:
 13. [Expansion path](docs/12-expansion-path.md)
 14. [Requirements traceability](docs/13-traceability-matrix.md)
 15. [Pre-build decisions and assumptions](docs/14-prebuild-decisions.md)
+16. [BOQ-to-Schedule Bootstrap amendment plan](docs/17-boq-to-schedule-bootstrap.md)
 
 Current progress is recorded in [Implementation Status](docs/IMPLEMENTATION_STATUS.md).
 
@@ -68,7 +69,7 @@ Open `/forecast` to inspect immutable production, schedule, and cost projection 
 
 ## First release boundary
 
-The MVP runs in shadow/advisory mode for one active project and 5–10 meaningful work packages. It ingests controlled project context and evidence, constructs and evaluates Decision Cases, shows reasoning and confidence, recommends a disposition, records a separate human decision, and monitors outcomes. It has no autonomous execution authority.
+The MVP first converts a representative BOQ into a traceable, validated schedule draft that a planner can correct and an authorized human can approve. It then runs in shadow/advisory mode for one active project and 5–10 meaningful work packages, ingesting controlled project context and evidence, constructing and evaluating Decision Cases, showing reasoning and confidence, recommending a disposition, recording a separate human decision, and monitoring outcomes. It has no autonomous execution authority.
 
 The first meaningful milestone is reached only when all five frozen synthetic cases produce acceptable results and all governance hard gates pass.
 
@@ -82,6 +83,18 @@ The orchestration API creates immutable, idempotent runs bound to one case snaps
 
 Open `/orchestration` to select case-bound specialist results, run or retry deterministic coordination on an immutable snapshot, and inspect specialist status, contradiction stops, disposition alternatives, blockers, and the structured case brief.
 
-### Human governance (Phase 11, in progress)
+### Human governance and response lifecycle (Phase 11)
 
 Human decisions are stored separately from system recommendations and require an active authority grant matching the actor, disposition, case scope, validity window, and any amount/currency limit. Agreement or disagreement with the recommendation is explicit, and every accepted decision is append-only, audited, and routed to the appropriate approval or escalation state.
+
+Authorized interventions proceed through separate immutable response proposals, explicit human authorization, observed execution status, evidence-backed realized outcomes, governed closure/reopening, and outcome-linked learning/calibration records. The runtime records project-team execution but never issues an execution command or impersonates human authority.
+
+### Decision Center and reports (Phase 12, in progress)
+
+Open `/decision-center` for the consolidated management-attention queue. It keeps priority, urgency, confidence, readiness, governance route, latest recommendation, signed decision basis, human disposition, limitations, response state, deadlines, and next action visibly separate. Governed JSON exports are available for the weekly decision brief, case dossier, project-control exceptions, pilot KPIs, and governance/conformity review.
+
+Reports include deterministic content hashes and semantic fidelity manifests. The Decision Queue also exports to CSV with recommendation, signed decision basis, and human disposition in separate columns. Phase 12 operator acceptance follows the time-boxed protocol in `docs/15-operator-usability-protocol.md` and requires representative human observation rather than automated tests alone.
+
+### Local Windows and Linux installers
+
+Run `make package-installers` to produce shareable Windows and Linux evaluation archives under `dist/installers`. The Windows launcher requires Docker Desktop; the Linux launcher supports Docker Compose or Podman Compose. Both start the web UI, API, PostgreSQL, automatic migrations, and persistent local evidence storage. See `docs/16-local-installer.md` for installation, stop/reset, security-boundary, and port details.

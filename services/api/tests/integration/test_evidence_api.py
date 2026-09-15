@@ -34,10 +34,13 @@ def evidence_api(
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_evidence_store] = lambda: LocalEvidenceStore(tmp_path)
-    with TestClient(app) as client:
+    client = TestClient(app)
+    try:
         yield client, test_sessions
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(engine)
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(engine)
 
 
 def bootstrap(client: TestClient) -> tuple[str, str, dict[str, str], str]:

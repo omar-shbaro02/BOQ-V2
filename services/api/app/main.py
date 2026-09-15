@@ -6,6 +6,7 @@ from app.generated import taxonomies
 from app.routers.cases import router as cases_router
 from app.routers.control_context import router as control_context_router
 from app.routers.cost import router as cost_router
+from app.routers.decision_center import router as decision_center_router
 from app.routers.evidence import router as evidence_router
 from app.routers.forecast import router as forecast_router
 from app.routers.governance import router as governance_router
@@ -41,6 +42,7 @@ app.include_router(cases_router)
 app.include_router(progress_router)
 app.include_router(schedule_router)
 app.include_router(cost_router)
+app.include_router(decision_center_router)
 app.include_router(forecast_router)
 app.include_router(impact_router)
 app.include_router(orchestration_router)

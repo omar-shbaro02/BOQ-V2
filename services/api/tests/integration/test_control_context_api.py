@@ -26,10 +26,13 @@ def api() -> Generator[tuple[TestClient, sessionmaker[Session]], None, None]:
             yield session
 
     app.dependency_overrides[get_db] = override_db
-    with TestClient(app) as client:
+    client = TestClient(app)
+    try:
         yield client, test_sessions
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(engine)
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(engine)
 
 
 def bootstrap_project(client: TestClient) -> tuple[str, str, dict[str, str]]:

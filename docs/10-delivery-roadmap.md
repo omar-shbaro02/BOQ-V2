@@ -4,6 +4,12 @@
 
 Build a vertical Decision Case capability before visual polish, then expand Decision Case by Decision Case. No phase is complete on code alone: its migration, authorization, audit, tests, documentation, and operator-visible failure states must also pass.
 
+## Amendment A — corrective BOQ-to-Schedule prerequisite
+
+The original roadmap assumed that a minimal authorized schedule already existed. The accepted BOQ-to-Schedule Bootstrap amendment closes that operational gap. Its detailed B0.1–B0.8 plan and BS-001–BS-010 gates are defined in `docs/17-boq-to-schedule-bootstrap.md`.
+
+In a greenfield build this capability precedes Phase 1. In this repository, Phases 0–11 and the technical portions of Phase 12 already exist, so it is inserted as a corrective prerequisite before Phase 13 rather than renumbering or discarding governed downstream work. Phase 12 operator acceptance must be repeated against the BOQ-first journey after the corrective track is complete.
+
 ## Phase 0 — Bootstrap and freeze contracts
 
 Work:
@@ -175,5 +181,4 @@ Exit gate: the pilot demonstrates evidence of earlier credible intervention deci
 
 ## Dependency order
 
-Phases 0–4 are foundational. Phases 5–7 may partially overlap after snapshots and evidence contracts stabilize. Phase 8 depends on valid progress/schedule/cost inputs; Phase 9 depends on forecasts and consequences; Phase 10 assembles them; Phase 11 precedes operational release; Phases 12–13 complete the product; Phase 14 validates it.
-
+Phases 0–4 are foundational. Phases 5–7 may partially overlap after snapshots and evidence contracts stabilize. Phase 8 depends on valid progress/schedule/cost inputs; Phase 9 depends on forecasts and consequences; Phase 10 assembles them; Phase 11 precedes operational release. Amendment A must now complete before Phase 13, and Phase 12 acceptance must include its BOQ-first workflow. Phase 13 completes hardening and Phase 14 validates the product.

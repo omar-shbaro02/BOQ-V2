@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: docker.io/postgres:17-alpine
+    environment:
+      POSTGRES_DB: vai
+      POSTGRES_USER: vai
+      POSTGRES_PASSWORD: vai-local-evaluation
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vai -d vai"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - vai_installer_postgres:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment: &api_environment
+      VAI_ENVIRONMENT: development
+      VAI_DATABASE_URL: postgresql+psycopg://vai:vai-local-evaluation@postgres:5432/vai
+      VAI_CORS_ORIGINS: '["http://localhost:3000"]'
+      VAI_EVIDENCE_STORAGE_BACKEND: local
+      VAI_EVIDENCE_STORAGE_PATH: /var/lib/vai/evidence
+    command:
+      - alembic
+      - -c
+      - /opt/vai/services/api/alembic.ini
+      - upgrade
+      - head
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment: *api_environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - vai_installer_evidence:/var/lib/vai/evidence
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_VAI_API_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  vai_installer_postgres:
+  vai_installer_evidence:

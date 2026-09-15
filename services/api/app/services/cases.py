@@ -52,6 +52,8 @@ from app.models import (
     EvidenceItem,
     EvidenceRequest,
     Project,
+    ResponseExecutionObservation,
+    ResponseOutcome,
 )
 from app.services.audit import record_audit
 from app.services.events import publish_domain_event
@@ -904,6 +906,23 @@ def close_case(
     require_version(case, data.expected_version)
     if case.lifecycle == CaseLifecycle.CLOSED:
         raise HTTPException(status_code=409, detail="Case is already closed")
+    if data.outcome_reference:
+        try:
+            response_outcome_id = uuid.UUID(data.outcome_reference)
+        except ValueError:
+            response_outcome_id = None
+        governed_outcomes_exist = session.scalar(
+            select(ResponseOutcome.id).where(ResponseOutcome.case_id == case.id).limit(1)
+        )
+        if governed_outcomes_exist:
+            response_outcome = (
+                session.get(ResponseOutcome, response_outcome_id) if response_outcome_id else None
+            )
+            if response_outcome is None or response_outcome.case_id != case.id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Closure must reference a governed response outcome for this case",
+                )
     previous = case.lifecycle
     case.lifecycle = CaseLifecycle.CLOSED
     case.blocked_from_lifecycle = None
@@ -960,13 +979,19 @@ def reopen_case(
                 )
             )
     if data.trigger == "RESPONSE_FAILED":
-        failed_response = session.scalar(
+        failed_active_response = session.scalar(
             select(CaseActiveResponse.id).where(
                 CaseActiveResponse.case_id == case.id,
                 CaseActiveResponse.status == ActiveResponseStatus.FAILED,
             )
         )
-        if failed_response is None:
+        failed_execution = session.scalar(
+            select(ResponseExecutionObservation.id).where(
+                ResponseExecutionObservation.case_id == case.id,
+                ResponseExecutionObservation.status == "FAILED",
+            )
+        )
+        if failed_active_response is None and failed_execution is None:
             raise HTTPException(
                 status_code=422, detail="Response-failed reopening requires a failed response"
             )

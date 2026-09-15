@@ -1,4 +1,4 @@
-.PHONY: bootstrap generate check-generated test lint typecheck build up down api web
+.PHONY: bootstrap generate check-generated test lint typecheck build up down api web package-installers
 
 COMPOSE ?= podman compose
 
@@ -41,3 +41,6 @@ api:
 
 web:
 	npm run dev:web
+
+package-installers:
+	sh scripts/package_installers.sh

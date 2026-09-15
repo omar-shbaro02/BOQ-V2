@@ -13,9 +13,12 @@ export default function Home() {
       <section className="panel" aria-labelledby="phase-heading">
         <div>
           <span className="label">Current build</span>
-          <h2 id="phase-heading">Phase 10 · Specialist orchestration</h2>
+          <h2 id="phase-heading">Phase 12 · Decision Center and reports</h2>
         </div>
-        <div className="panel-actions">
+        <nav className="panel-actions" aria-label="Application workbenches">
+          <Link className="status" href="/decision-center">
+            Decision Center
+          </Link>
           <Link className="quiet-link" href="/setup">
             Configure project
           </Link>
@@ -42,7 +45,7 @@ export default function Home() {
           <Link className="status" href="/forecast">
             Forecast →
           </Link>
-        </div>
+        </nav>
       </section>
       <section aria-labelledby="dispositions-heading">
         <h2 id="dispositions-heading">Allowed recommendations</h2>

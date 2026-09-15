@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
+import { GovernanceWorkflow } from "./governance-workflow";
+
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
 type Connection = { actorId: string; organizationId: string; projectId: string };
@@ -294,6 +296,7 @@ export function CaseCenter() {
           <article className="workbench-card"><h3>Baseline governance</h3><p className="panel-note">A challenge is append-only and affects later sufficiency assessments; it never rewrites the frozen snapshot.</p><form className="stack-form compact" onSubmit={challengeBaseline}><label>Challenge rationale<input name="rationale" defaultValue="Authorized schedule baseline is disputed pending controller verification" required /></label><button disabled={busy || !assembly.case.last_snapshot_id || assembly.case.lifecycle === "CLOSED"}>Record disputed baseline</button></form></article>
           <article className="workbench-card"><h3>Close or reopen</h3>{assembly.case.lifecycle === "CLOSED" ? <><p className="panel-note">Closed: {assembly.case.close_reason}{assembly.case.outcome_reference ? ` · ${assembly.case.outcome_reference}` : ""}</p><form className="stack-form compact" onSubmit={reopenCase}><label>New material evidence UUID<input name="evidenceId" required /></label><label>Reopen reason<input name="reason" defaultValue="New material evidence changes the case basis" required /></label><button disabled={busy}>Reopen case</button></form></> : <form className="stack-form compact" onSubmit={closeCase}><label>Outcome reference<input name="outcomeReference" placeholder="Required for authority-led closure" /></label><label>Administrative rationale<input name="administrativeRationale" placeholder="Admin-only alternative to an outcome reference" /></label><button disabled={busy}>Close with recorded basis</button></form>}</article>
           <article className="workbench-card full-span"><h3>Immutable snapshots</h3><div className="mini-ledger horizontal">{assembly.snapshots.map((item) => <div key={item.id}><strong>Snapshot {item.snapshot_number} · {item.baseline_validity}</strong><span>{new Date(item.data_date).toLocaleString()} · {item.active_response_ids.length} active responses</span><small title={item.snapshot_hash}>{item.snapshot_hash}</small></div>)}</div></article>
+          {connection ? <GovernanceWorkflow connection={connection} caseId={assembly.case.id} version={assembly.case.version} onChanged={() => loadAssembly(assembly.case.id)} /> : null}
           <article className="workbench-card full-span"><h3>Chronological case ledger</h3><div className="mini-ledger">{assembly.ledger.map((item) => <div className="ledger-entry" key={item.id}><span>v{item.case_version}</span><strong>{item.event_type.replaceAll("_", " ")}</strong><span>{item.reason}</span><small>{item.actor_id} · {new Date(item.occurred_at).toLocaleString()}</small></div>)}</div></article>
         </div>
       </>}

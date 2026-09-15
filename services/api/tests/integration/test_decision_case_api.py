@@ -1,3 +1,5 @@
+import hashlib
+import json
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
@@ -43,10 +45,13 @@ def case_api(
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_evidence_store] = lambda: LocalEvidenceStore(tmp_path)
-    with TestClient(app) as client:
+    client = TestClient(app)
+    try:
         yield client, sessions
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(engine)
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(engine)
 
 
 def bootstrap(client: TestClient) -> tuple[str, str, dict[str, str], str]:
@@ -2850,6 +2855,235 @@ def test_orchestration_assembles_supported_disposition_and_specialist_boundaries
         and item["details"]["decision_id"] == decision["id"]
         for item in ledger
     )
+    proposal_url = f"{base}/response-proposals"
+    proposal_body = {
+        "expected_version": decided.json()["case"]["version"],
+        "human_decision_id": decision["id"],
+        "response_type": "SCHEDULE_RECOVERY",
+        "objective": "Recover the exposed material milestone using an authorized crew response",
+        "actions": [{"action": "mobilize_additional_crew", "owner": headers["X-VAI-Actor-ID"]}],
+        "assumptions": ["Crew availability remains confirmed"],
+        "simulated_effects": {"schedule_days_recovered": 2, "semantic_state": "SCENARIO"},
+        "requested_amount": "50",
+        "currency": "USD",
+    }
+    proposed = client.post(
+        proposal_url,
+        headers={**headers, "Idempotency-Key": "response-proposal-1"},
+        json=proposal_body,
+    )
+    assert proposed.status_code == 201, proposed.text
+    proposal = proposed.json()
+    assert proposal["simulated_effects"]["semantic_state"] == "SCENARIO"
+    assert proposal["human_decision_id"] == decision["id"]
+    proposal_replay = client.post(
+        proposal_url,
+        headers={**headers, "Idempotency-Key": "response-proposal-1"},
+        json=proposal_body,
+    )
+    assert proposal_replay.status_code == 201
+    assert proposal_replay.json()["id"] == proposal["id"]
+    current = client.get(base, headers=headers).json()
+    execution_url = f"{proposal_url}/{proposal['id']}/execution"
+    premature = client.post(
+        execution_url,
+        headers={**headers, "Idempotency-Key": "execution-premature"},
+        json={
+            "expected_version": current["version"],
+            "status": "IN_PROGRESS",
+            "observed_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    assert premature.status_code == 409
+    response_grant = client.post(
+        f"/api/v1/projects/{project_id}/authority-grants",
+        headers=headers,
+        json={
+            "actor_id": headers["X-VAI-Actor-ID"],
+            "authority_type": "RESPONSE_AUTHORIZATION",
+            "controlled_object_id": object_id,
+            "max_amount": "50",
+            "currency": "USD",
+            "escalation_level": 1,
+        },
+    )
+    assert response_grant.status_code == 201, response_grant.text
+    authorized = client.post(
+        f"{proposal_url}/{proposal['id']}/authorization",
+        headers=headers,
+        json={
+            "expected_version": current["version"],
+            "authority_grant_id": response_grant.json()["id"],
+            "authorization_reference": "AUTH-RESPONSE-001",
+        },
+    )
+    assert authorized.status_code == 201, authorized.text
+    assert authorized.json()["human_decision_id"] == decision["id"]
+    current = client.get(base, headers=headers).json()
+    assert current["governance_state"] == "AUTHORIZED_TO_PROCEED"
+    assert current["lifecycle"] == "RESPONSE_ESCALATION"
+    in_progress = client.post(
+        execution_url,
+        headers={**headers, "Idempotency-Key": "execution-in-progress"},
+        json={
+            "expected_version": current["version"],
+            "status": "IN_PROGRESS",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "details": {"note": "Crew mobilized by the authorized project team"},
+            "evidence_item_ids": [delay["id"]],
+        },
+    )
+    assert in_progress.status_code == 201, in_progress.text
+    current = client.get(base, headers=headers).json()
+    assert current["lifecycle"] == "OUTCOME_MONITORING"
+    completed = client.post(
+        execution_url,
+        headers={**headers, "Idempotency-Key": "execution-completed"},
+        json={
+            "expected_version": current["version"],
+            "status": "COMPLETED",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "details": {"note": "Authorized response work reported complete"},
+            "evidence_item_ids": [delay["id"]],
+        },
+    )
+    assert completed.status_code == 201, completed.text
+    execution_history = client.get(execution_url, headers=headers).json()
+    assert [item["status"] for item in execution_history] == ["IN_PROGRESS", "COMPLETED"]
+    current = client.get(base, headers=headers).json()
+    outcome = client.post(
+        f"{proposal_url}/{proposal['id']}/outcomes",
+        headers={**headers, "Idempotency-Key": "response-outcome-1"},
+        json={
+            "expected_version": current["version"],
+            "classification": "PARTIALLY_ACHIEVED",
+            "evidence_item_ids": [delay["id"]],
+            "rationale": (
+                "Attached field evidence supports partial schedule recovery after completion"
+            ),
+        },
+    )
+    assert outcome.status_code == 201, outcome.text
+    assert outcome.json()["evidence_item_ids"] == [delay["id"]]
+    current = client.get(base, headers=headers).json()
+    learning_body = {
+        "expected_version": current["version"],
+        "response_outcome_id": outcome.json()["id"],
+        "category": "POLICY",
+        "finding": "The authorized recovery response achieved only part of its simulated effect",
+        "contributing_factors": ["Observed recovery was below the proposal scenario"],
+        "calibration_notes": (
+            "Retain the realized outcome when reviewing confidence and policy thresholds"
+        ),
+    }
+    learned = client.post(
+        f"{base}/learning-records",
+        headers={**headers, "Idempotency-Key": "learning-record-1"},
+        json=learning_body,
+    )
+    assert learned.status_code == 201, learned.text
+    assert learned.json()["calibration"]["recommended_disposition"] == "INTERVENE"
+    assert learned.json()["calibration"]["realized_outcome"] == "PARTIALLY_ACHIEVED"
+    learning_replay = client.post(
+        f"{base}/learning-records",
+        headers={**headers, "Idempotency-Key": "learning-record-1"},
+        json=learning_body,
+    )
+    assert learning_replay.status_code == 201
+    assert learning_replay.json()["id"] == learned.json()["id"]
+    current = client.get(base, headers=headers).json()
+    wrong_outcome = client.post(
+        f"{base}/close",
+        headers=headers,
+        json={"expected_version": current["version"], "outcome_reference": str(uuid.uuid4())},
+    )
+    assert wrong_outcome.status_code == 422
+    closed = client.post(
+        f"{base}/close",
+        headers=headers,
+        json={
+            "expected_version": current["version"],
+            "outcome_reference": outcome.json()["id"],
+        },
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["lifecycle"] == "CLOSED"
+    assert (
+        client.get(f"{base}/learning-records", headers=headers).json()[0]["id"]
+        == learned.json()["id"]
+    )
+    ledger = client.get(f"{base}/ledger", headers=headers).json()
+    assert {
+        "RESPONSE_PROPOSED",
+        "RESPONSE_AUTHORIZED",
+        "RESPONSE_EXECUTION_OBSERVED",
+        "RESPONSE_OUTCOME_RECORDED",
+        "LEARNING_RECORDED",
+    } <= {item["event_type"] for item in ledger}
+    outbox = client.get(f"/api/v1/projects/{project_id}/outbox-events", headers=headers).json()
+    response_events = {
+        item["event_type"]: item
+        for item in outbox
+        if item["event_type"]
+        in {
+            "ResponseAuthorized",
+            "OutcomeObserved",
+        }
+    }
+    assert response_events["ResponseAuthorized"]["payload"]["proposal_id"] == proposal["id"]
+    assert response_events["OutcomeObserved"]["payload"]["outcome_id"] == outcome.json()["id"]
+    center = f"/api/v1/projects/{project_id}/decision-center"
+    queue = client.get(f"{center}/queue", headers=headers)
+    assert queue.status_code == 200, queue.text
+    queue_item = next(item for item in queue.json() if item["case_id"] == case["id"])
+    assert queue_item["recommended_disposition"] == "VERIFY"
+    assert queue_item["decision_basis_recommendation"] == "INTERVENE"
+    assert queue_item["human_disposition"] == "INTERVENE"
+    assert queue_item["next_action"] == "REOPEN_ONLY_ON_MATERIAL_TRIGGER"
+    review_queues = client.get(f"{center}/review-queues", headers=headers)
+    assert review_queues.status_code == 200, review_queues.text
+    assert review_queues.json()["project_timezone"] == "Asia/Beirut"
+    assert set(review_queues.json()) == {
+        "project_timezone",
+        "verification",
+        "human_review",
+        "approval",
+        "escalation",
+        "governance_blocks",
+        "overdue_evidence",
+        "expiring_forecasts",
+    }
+    weekly = client.get(f"{center}/reports/weekly-decision-brief", headers=headers)
+    assert weekly.status_code == 200, weekly.text
+    assert weekly.json()["semantic_notice"].startswith("Recommendations, forecasts")
+    canonical_payload = json.dumps(
+        weekly.json()["payload"], sort_keys=True, separators=(",", ":"), default=str
+    )
+    assert weekly.json()["content_hash"] == hashlib.sha256(canonical_payload.encode()).hexdigest()
+    assert weekly.json()["fidelity_manifest"]["recommendation_is_not_decision"] is True
+    assert any(item["case_id"] == case["id"] for item in weekly.json()["payload"]["decision_queue"])
+    dossier = client.get(f"{center}/reports/case-dossier/{case['id']}", headers=headers)
+    assert dossier.status_code == 200, dossier.text
+    assert dossier.json()["payload"]["human_decisions"][0]["id"] == decision["id"]
+    assert dossier.json()["payload"]["outcomes"][0]["id"] == outcome.json()["id"]
+    assert dossier.json()["payload"]["learning_records"][0]["id"] == learned.json()["id"]
+    exceptions = client.get(f"{center}/reports/project-control-exceptions", headers=headers)
+    assert exceptions.status_code == 200, exceptions.text
+    assert "dismissed_signal_count" in exceptions.json()["payload"]
+    kpis = client.get(f"{center}/reports/pilot-kpis", headers=headers)
+    assert kpis.status_code == 200, kpis.text
+    assert kpis.json()["payload"]["human_decision_count"] == 1
+    conformity = client.get(f"{center}/reports/governance-conformity", headers=headers)
+    assert conformity.status_code == 200, conformity.text
+    assert conformity.json()["payload"]["result"] == "CONFORMANT"
+    queue_csv = client.get(f"{center}/exports/decision-queue.csv", headers=headers)
+    assert queue_csv.status_code == 200, queue_csv.text
+    assert queue_csv.headers["x-vai-semantic-notice"] == "recommendation-is-not-human-decision"
+    assert queue_csv.headers["x-vai-project-timezone"] == "Asia/Beirut"
+    header = queue_csv.text.splitlines()[0]
+    assert "recommended_disposition" in header
+    assert "decision_basis_recommendation" in header
+    assert "human_disposition" in header
 
 
 def test_orchestration_stops_on_material_cross_specialist_contradiction(case_api):

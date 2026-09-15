@@ -12,6 +12,18 @@
   box-sizing: border-box;
 }
 
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+button,
+a,
+select,
+input {
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   background:
@@ -52,9 +64,9 @@ h1 {
 }
 
 .panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.65fr) minmax(0, 2fr);
+  align-items: start;
   gap: 24px;
   margin: 64px 0;
   padding: 28px;
@@ -81,7 +93,19 @@ h1 {
 .panel-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel-actions .status,
+.panel-actions .quiet-link {
+  flex: 0 1 auto;
+}
+
+.panel-actions .quiet-link {
+  padding: 9px 6px;
 }
 
 .quiet-link {
@@ -371,6 +395,161 @@ footer {
 .empty-state,
 .workbench-message {
   color: var(--muted);
+}
+
+.decision-center-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.center-connect {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.center-connect label,
+.center-filters label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.center-connect input,
+.center-filters select {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--background);
+  color: var(--ink);
+}
+
+.center-filters {
+  display: flex;
+  gap: 10px;
+}
+
+.queue-table-wrap {
+  overflow-x: auto;
+}
+
+.decision-queue-table {
+  width: 100%;
+  margin-top: 18px;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.decision-queue-table th,
+.decision-queue-table td {
+  min-width: 155px;
+  padding: 13px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.decision-queue-table th {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.decision-queue-table td span,
+.decision-queue-table td strong,
+.decision-queue-table td small {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.decision-queue-table td small {
+  color: var(--muted);
+}
+
+.priority-label {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.review-queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.review-queue-grid article {
+  display: grid;
+  gap: 6px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--background);
+}
+
+.review-queue-grid article > span {
+  color: var(--accent);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.review-queue-grid small,
+.review-queue-grid p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.governance-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.governance-forms form {
+  align-content: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--background);
+}
+
+.governance-forms h4 {
+  margin: 0 0 4px;
+  color: var(--accent);
+}
+
+.governance-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.governance-history span {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .signal-connect {
@@ -749,13 +928,12 @@ footer {
   }
 
   .panel {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .panel-actions {
     align-items: flex-start;
-    flex-direction: column;
+    justify-content: flex-start;
   }
 
   .dispositions {
@@ -813,5 +991,15 @@ footer {
   .workbench-card.full-width,
   .full-width {
     grid-column: auto;
+  }
+
+  .decision-center-grid,
+  .center-connect {
+    grid-template-columns: 1fr;
+  }
+
+  .center-filters {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

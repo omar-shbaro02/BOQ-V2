@@ -2,6 +2,18 @@
 
 Last updated: 2026-09-15
 
+## Accepted product amendment — BOQ-to-Schedule Bootstrap
+
+Status: **required corrective track; implementation not started**.
+
+The BOQ-to-Schedule Bootstrap Amendment v1.0, implementation brief, and frozen 19-stage canonical record supplied on 2026-09-15 were reviewed as product-definition input. The duplicate amendment files were byte-for-byte identical.
+
+The review confirmed a material operational gap: the application can preserve generic evidence, validate manually supplied BOQ/schedule contexts, authorize a supplied schedule, and analyze an authorized schedule, but it cannot yet transform an Excel/PDF BOQ into a traceable, validated, human-reviewable schedule draft.
+
+The repository plan is recorded in `docs/17-boq-to-schedule-bootstrap.md`. It adds eight corrective slices covering source preservation, extraction/normalization, classification, WBS/work packages, activities and duration bases, dependencies/milestones/calendars, deterministic CPM/validation, planner review, authority approval, export, and revision deltas. All BS-001 through BS-010 gates are mandatory.
+
+Existing Phase 0–11 implementation remains reusable downstream. Phase 12 stays open, and its representative human sessions must exercise the BOQ-first workflow after the bootstrap UI exists. Do not begin Phase 13 until this corrective track and the amended Phase 12 acceptance are complete.
+
 ## Completed phases
 
 ### Phase 0 — Bootstrap and frozen contracts
@@ -389,7 +401,7 @@ Phase boundary: Phase 10 publishes a versioned recommendation and structured bri
 
 ### Phase 11 — Human governance and response lifecycle
 
-Status: **starting**.
+Status: **complete**.
 
 Initial contract work:
 
@@ -403,23 +415,92 @@ Initial governance implementation:
 - Human disposition now advances the case to `HUMAN_DISPOSITION` and routes governance independently: intervention requires approval, escalation requires escalation authority, monitoring/verification returns to analysis authority, and no-action can be authorized to proceed.
 - Added decision history APIs, a latest-decision case pointer, audit/case-ledger provenance, migration `0013_human_decisions`, and append-only PostgreSQL protection.
 
+Response lifecycle implementation:
+
+- Added immutable, idempotent response proposals linked to an authorized human `INTERVENE` decision. Proposed actions, assumptions, simulated effects, amount, and currency remain explicit proposal/scenario data and do not alter authorized or actual state.
+- Added separate response authorization records linked to the proposal, human decision, exact active authority grant, captured authority scope, and external authorization reference. Controlled-object scope, validity window, amount ceiling, and currency fail closed.
+- Added append-only execution-status observations with governed transitions and optional case-attached evidence. The API observes execution performed by the authorized project team; it does not issue an execution command.
+- Added evidence-backed realized response outcomes, with non-observable outcomes kept distinct from achieved/partially achieved/not achieved conclusions.
+- Response authorization and realized outcome now publish transactional `ResponseAuthorized` and `OutcomeObserved` outbox events in addition to project audit and chronological case-ledger provenance.
+- Added proposal, authorization, execution-history, and outcome-history APIs plus reversible migration `0014_response_lifecycle` with append-only database protection.
+
+Close/reopen and learning implementation:
+
+- Integrated closure with governed response outcomes: once a case has response-outcome history, closure must reference an outcome belonging to that exact case rather than an arbitrary external identifier. Existing administrative and pre-response closure paths remain backward compatible.
+- Integrated `RESPONSE_FAILED` reopening with both legacy active-response failures and the new append-only execution-observation history.
+- Added immutable, idempotent learning records linked through realized outcome → response proposal → human decision → orchestration run. Each record freezes category, finding, contributing factors, recommended and human dispositions, agreement, predicted overall confidence when available, realized outcome, and exact policy/formula versions.
+- Added learning history APIs, audit/case-ledger provenance, migration `0015_learning_records`, and append-only PostgreSQL protection.
+- Corrected the integration fixtures for the installed Starlette/Python 3.14 combination by using explicit `TestClient.close()`; this avoids a context-manager startup stall without changing application behavior.
+
 Verification evidence for this slice:
 
 - Focused API coverage passed for agreement mismatch, missing authority, scoped amount/currency authority, authorized decision, lifecycle/governance routing, idempotent replay, outsider denial, history, and ledger events.
 - Live PostgreSQL `0012_contradiction_resolutions → 0013_human_decisions → 0012_contradiction_resolutions → 0013_human_decisions` migration rehearsal passed; the table and append-only trigger were verified after re-upgrade.
+- The focused end-to-end governance path passed from Phase 10 orchestration through human decision, proposal, authorization, execution observation, evidence-backed outcome, immutable learning/calibration, and governed closure, including idempotency and outbox assertions.
+- All **37 Decision Case integration tests** passed, including the existing close/reopen regression suite.
+- Live PostgreSQL `0013_human_decisions → 0015_learning_records → 0013_human_decisions → 0015_learning_records` migration rehearsal passed. All five Phase 11 response/learning tables and their append-only triggers were verified after re-upgrade.
+- Full repository gate passed on 2026-09-15: generated contracts, **83 tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+
+Phase boundary: Phase 11 completes the governed backend path from recommendation through separate human authority, observed execution, evidence-backed outcome, closure/reopening, and learning. It never issues an execution command or promotes proposals/scenarios into fact or authorized state. Decision Center workflow consolidation and reports belong to Phase 12.
+
+### Phase 12 — Decision Center and reports
+
+Status: **in progress**.
+
+Initial Decision Center and reporting slice:
+
+- Added a consolidated, project-scoped management-attention queue ordered by governed priority and urgency, with lifecycle, readiness, governance route, owner, controlled-object reach, open limitations, active responses, confidence, consequence window, deadline, and deterministic next action kept separate.
+- Preserved recommendation lineage when a newer orchestration exists after a signed decision: the queue exposes both the latest system recommendation and the exact recommendation basis linked to the human decision, so agreement/disagreement cannot be misrepresented.
+- Added versioned JSON report projections for the weekly decision brief, complete case dossier, material project-control exceptions, pilot KPI/cohort metrics, and governance/conformity checks.
+- All report envelopes include organization/project, as-of and generated timestamps, actor, schema version, and an explicit semantic notice. Case dossiers retain snapshots, impact, orchestration, human decisions, response authorization/execution/outcome, learning, and chronological ledger records with their IDs and versions.
+- Added the responsive `/decision-center` UI with project connection, lifecycle/governance filters, accessible queue table, non-color-only priority/urgency/confidence labels, visible system-versus-human disposition lineage, deterministic next actions, and downloads for all five governed JSON exports.
+- Updated the home route to identify Phase 12 and link directly to the Decision Center.
+
+Verification evidence for this slice:
+
+- Focused end-to-end coverage passed for queue ordering fields, latest-versus-decision-basis recommendation lineage, closure next action, semantic export notice, all five report endpoints, and dossier decision/outcome/learning fidelity.
+- Full repository gate passed on 2026-09-15: generated contracts, **83 tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build including `/decision-center`.
+
+Review queues and governed case-detail slice:
+
+- Added seven dedicated project-scoped review queues for verification, human review, approval, escalation, governance blocks, overdue evidence, and forecasts expiring within seven days. Every entry includes the case projection, visible routing reason, next deadline, and required role.
+- Added project-timezone metadata to the review projection and render queue deadlines with an explicit IANA timezone label rather than silently using the browser timezone.
+- Extended full Decision Case detail with a separate human-governance workbench backed by the governed case dossier. Operators can record a signed human decision, response proposal/scenario, exact authorization, external execution observation, evidence-backed outcome, and immutable learning/calibration record without crossing system-recommendation boundaries.
+- The case-detail workflow shows separate counts for decisions, proposals, authorizations, observations, outcomes, and learning records and retains the existing chronological case ledger beside them.
+- Full repository gate passed again on 2026-09-15: generated contracts, **83 tests** including all **37 Decision Case integration tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+
+Export fidelity and usability-readiness slice:
+
+- Added deterministic SHA-256 content hashes over canonical JSON payloads and a fidelity manifest to every governed report. The manifest explicitly preserves evidence, analysis, forecast/scenario, recommendation, human decision, authorization, execution observation, and realized-outcome boundaries.
+- Added a spreadsheet-friendly Decision Queue CSV export with separate latest recommendation, signed-decision recommendation basis, human disposition, confidence, priority, urgency, governance, deadline, and next-action columns. Response headers carry the export schema, semantic notice, and project timezone.
+- Added regression coverage that independently reconstructs report hashes and verifies CSV semantic columns and metadata headers.
+- Preserved Decision Center project context and lifecycle/governance filters in session-scoped browser storage; authenticated actor context is not placed in persistent local storage.
+- Added global visible keyboard focus styling and touch-target behavior to complement semantic labels, table headers/caption, live status messages, responsive layouts, and non-color-only state text.
+- Added `docs/15-operator-usability-protocol.md` with participant requirements, six time-boxed core tasks, accessibility/export checks, semantic hard failures, acceptance evidence, and a clear separation between automated workflow evidence and representative human observation.
+- Full repository gate passed again on 2026-09-15: generated contracts, **83 tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+
+Local operator distribution:
+
+- Added reproducible container images for the FastAPI service and Next.js application plus `compose.installer.yml` for PostgreSQL, automatic Alembic migrations, API health gating, web startup, and persistent database/evidence volumes.
+- Added one-command Windows PowerShell and Linux shell launchers with prerequisite checks, health waiting, browser launch, data-preserving stop, and explicit destructive reset modes. Linux consistently prefers Podman when both Podman and Docker engines are available to avoid cross-engine port conflicts.
+- Added `make package-installers`, which creates shareable Windows ZIP and Linux tar.gz evaluation bundles without repository, virtual-environment, dependency-cache, local-data, or secret files.
+- Added `docs/16-local-installer.md` documenting requirements, ports, persistence, lifecycle commands, and the non-production security boundary.
+- Fresh installer verification passed on 2026-09-15: both archives passed integrity/content checks; Compose configuration rendered successfully; Python 3.12 and Node 22 images built; a clean PostgreSQL volume migrated through `0015_learning_records`; API health returned `200`; the production Next.js container returned `200`; and a data-preserving Linux launcher stop/start path was exercised. The validated application was left running locally on ports 3000/8000 for operator use.
+
+Remaining Phase 12 exit evidence: conduct and document the representative human sessions defined in `docs/15-operator-usability-protocol.md`. The technical workflow, report/export fidelity controls, saved filter/context behavior, and automated accessibility foundations are implemented; automated tests are not being presented as a substitute for operator observation.
 
 ## Remaining delivery count
 
-The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `10` are recorded complete, leaving **4 phases**: Phases `11` through `14`. Earlier verification entries are historical evidence, not fresh certification of this checkout.
+The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through `11` are recorded complete, leaving **3 numbered phases**: Phases `12` through `14`. Amendment A adds one required corrective bootstrap track before Phase 13. Earlier verification entries are historical evidence, not fresh certification of a later checkout.
 
 ## Continuity handoff
 
 - Repository-level working agreements and invariants are recorded in `AGENTS.md`; a fresh Codex session should load that file before acting.
-- Resume Phase 11 after the completed human-decision slice. The next vertical slice is response proposal/simulation, explicit authorization linkage, execution-status observation, and outcome evidence.
-- Follow that with close/reopen integration and immutable learning/calibration records before declaring Phase 11 complete.
-- The current checkpoint includes migrations through `0013_human_decisions`. Do not recreate completed Phase 10 orchestration or the initial Phase 11 decision/authority implementation.
+- Resume with B0.1 in `docs/17-boq-to-schedule-bootstrap.md`. Preserve the already-built downstream runtime and make the authorized bootstrap output compatible with its current schedule-context contract.
+- After B0.1–B0.8, conduct and document amended representative human sessions covering BOQ upload through schedule authorization and the existing Decision Center workflow. Do not mark Phase 12 complete from automated checks alone.
+- The current checkpoint includes migrations through `0015_learning_records`. Do not recreate completed Phase 10 orchestration or Phase 11 governance/response lifecycle records.
 - On a fresh machine or account, inspect `git status` and recent history, install locked dependencies if needed, and treat verification recorded below as historical until rerun locally.
 
 ## Next implementation order
 
-Continue Phase 11 — Human governance and response lifecycle. Governance routing, exact authority validation, and separate human decisions are implemented. Next implement response proposal/simulation, explicit authorization linkage, execution-status observation, and outcome evidence; then close/reopen integration and learning/calibration records. Production OIDC, object storage, and malware-scanning selections remain the external-integration limitations recorded in Phases 1–2.
+Implement B0.1 — bootstrap contracts and immutable BOQ source preservation — followed by B0.2–B0.8 in `docs/17-boq-to-schedule-bootstrap.md`. Then extend and run the Phase 12 operator protocol across the BOQ-first workflow. Production OIDC, object storage, malware scanning, and production OCR selections remain explicit external-integration limitations.

@@ -18,4 +18,5 @@ node_modules/
 out/
 coverage/
 htmlcov/
+dist/
 *.log
