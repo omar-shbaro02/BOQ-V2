@@ -15,6 +15,19 @@ Use versioned REST/JSON for commands and queries in MVP, publish OpenAPI, and ma
 - `/evidence-requests`, `/specialist-runs`, `/forecasts`, `/scenarios`
 - `/recommendations`, `/human-decisions`, `/responses`, `/outcomes`
 - `/reports`, `/metrics`, `/benchmark-runs`, `/conformity-reports`
+- `/projects/{id}/bootstrap/boq-sources` and `/projects/{id}/bootstrap/boq-sources/{source-id}`
+
+BOQ bootstrap source creation references an existing governed evidence artifact and requires an idempotency key. The returned immutable version includes the artifact digest, predecessor, parser/version, extraction status/confidence, workbook or page structure, warnings, and raw row locations. Creating a revision requires both the latest prior source version and an artifact that explicitly supersedes the prior artifact.
+
+`POST /projects/{id}/bootstrap/boq-sources/{source-id}/normalizations` creates one immutable normalization for an extracted source. It accepts optional per-sheet header-row and one-based canonical-column overrides, requires an idempotency key, and returns counts for total, schedule-relevant, and review-required rows. `GET /projects/{id}/bootstrap/boq-sources/{source-id}/normalization` returns every canonical line with raw-source lineage, normalized and unmapped values, classification basis, confidence, review state, and warnings.
+
+Planning-structure endpoints create and list immutable proposed WBS/work-package versions for a normalized BOQ. Revision commands support package split/merge, BOQ-line remap, planner acceptance, and rejection. Every revision names the exact predecessor, reason, actor, action, changed IDs, and idempotent request hash; stale predecessors fail closed. `REVIEWED` is planner review only and never means current-authorized or baseline-authorized schedule state.
+
+Schedule-draft generation accepts the latest planner-reviewed structure plus explicit duration and productivity records. It returns immutable archetyped activities, BOQ-line references, quantity/unit aggregation, duration status/basis, unrounded calculations, visible productivity provenance, warnings, and first-class assumptions. Missing or incompatible duration support yields `VERIFICATION_REQUIRED`; the API never supplies an implicit productivity, crew, shift, efficiency, overtime, calendar, or authorized state.
+
+`POST /projects/{id}/bootstrap/schedule-drafts/{generation-id}/logic` creates the immutable B0.5 schedule-logic proposal for one exact draft generation; `GET` returns it. Inputs may include explicit dependencies, validated sequence templates, proposed milestones and constraints, and a reviewed working calendar. Relationships retain type, lag, basis, confidence, and review state. Missing calendars become visible low-confidence review assumptions. Milestones and constraints are always returned as proposed and unauthorized; neither contract evidence nor BOQ wording creates schedule authority.
+
+`POST /projects/{id}/bootstrap/schedule-drafts/{generation-id}/calculations` calculates immutable CPM dates, float, milestone variance, validation findings, input hash, and readiness from the exact draft and logic proposal. A blocker prevents `POST /projects/{id}/bootstrap/schedule-calculations/{calculation-id}/reviews`. Planner review stores field-level original/revised values, actor, time, and reason in an immutable release; only a separate `POST /projects/{id}/bootstrap/schedule-releases/{release-id}/approve` with an exact active human schedule-authority grant can create a current-authorized schedule context. A reviewed release cannot be approved twice. `GET /projects/{id}/bootstrap/schedule-releases/{release-id}/export/{json|csv|xlsx}` returns authenticated exports with BOQ traceability and semantic state. `POST` and `GET /projects/{id}/bootstrap/boq-sources/{source-id}/revision-delta` compare a normalized BOQ revision without mutating the current authorized schedule.
 
 ## 3. Important commands
 
@@ -52,4 +65,3 @@ Machine-readable errors contain code, message, field paths, correlation ID, retr
 ## 7. Compatibility
 
 Additive changes remain backward compatible within a major API version. Taxonomy/schema/policy versions travel with stored outputs. Breaking changes require migration, replay-impact analysis, and contract tests for web, imports, reports, and benchmark fixtures.
-

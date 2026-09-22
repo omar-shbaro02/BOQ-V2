@@ -1,61 +1,22 @@
-import { DispositionValues, SCHEMA_VERSION } from "@/src/generated/taxonomies";
 import Link from "next/link";
 
+const signals = [
+  { type: "Schedule", title: "Facade package trending late", detail: "12-day variance against authorized baseline", time: "8 min", tone: "critical" },
+  { type: "Cost", title: "Concrete package forecast shift", detail: "+4.8% at completion · verification pending", time: "42 min", tone: "warning" },
+  { type: "Evidence", title: "Progress claim contradiction", detail: "Site report conflicts with verified quantity", time: "2 hr", tone: "neutral" },
+];
+
 export default function Home() {
-  return (
-    <main>
-      <section className="eyebrow">VAI · Project Control</section>
-      <h1>Decision Intelligence, governed from evidence to action.</h1>
-      <p className="lede">
-        The Decision Center will reconcile execution evidence, authorized constraints, and
-        credible forecasts without confusing a system recommendation with a human decision.
-      </p>
-      <section className="panel" aria-labelledby="phase-heading">
-        <div>
-          <span className="label">Current build</span>
-          <h2 id="phase-heading">Phase 12 · Decision Center and reports</h2>
-        </div>
-        <nav className="panel-actions" aria-label="Application workbenches">
-          <Link className="status" href="/decision-center">
-            Decision Center
-          </Link>
-          <Link className="quiet-link" href="/setup">
-            Configure project
-          </Link>
-          <Link className="status" href="/evidence">
-            Evidence
-          </Link>
-          <Link className="status" href="/signals">
-            Signals
-          </Link>
-          <Link className="status" href="/cases">
-            Decision cases
-          </Link>
-          <Link className="status" href="/progress">
-            Progress
-          </Link>
-          <Link className="status" href="/schedule">
-            Schedule
-          </Link>
-          <Link className="status" href="/cost">
-            Cost
-          </Link>
-          <Link className="status" href="/impact">Consequence &amp; Priority</Link>
-          <Link className="status" href="/orchestration">Orchestration</Link>
-          <Link className="status" href="/forecast">
-            Forecast →
-          </Link>
-        </nav>
-      </section>
-      <section aria-labelledby="dispositions-heading">
-        <h2 id="dispositions-heading">Allowed recommendations</h2>
-        <ul className="dispositions">
-          {DispositionValues.map((value) => (
-            <li key={value}>{value.replaceAll("_", " ")}</li>
-          ))}
-        </ul>
-      </section>
-      <footer>Shared contract v{SCHEMA_VERSION} · Human authority remains explicit.</footer>
-    </main>
-  );
+  return <main className="dashboard-shell">
+    <section className="dashboard-heading"><div><span className="eyebrow">Command center · illustrative preview</span><h1>Project controls at a glance.</h1><p>Preview the management-attention layout, then connect a project in the governed workbenches.</p></div><div className="dashboard-heading-actions"><span className="reporting-period">Preview period <strong>Illustrative data only</strong></span><Link href="/bootstrap" className="dashboard-secondary-action">Schedule &amp; progress report</Link><Link href="/decision-center" className="primary-action">Open decision queue <span>→</span></Link></div></section>
+    <section className="metric-grid" aria-label="Project summary"><Metric label="Open decision cases" value="18" change="3 require action" icon="◫" tone="burgundy"/><Metric label="Active signals" value="27" change="5 new this week" icon="⌁" tone="amber"/><Metric label="Schedule variance" value="−8.4%" change="2.1% worse" icon="↘" tone="red"/><Metric label="Forecast at completion" value="$48.2M" change="+$1.3M forecast" icon="$" tone="blue"/></section>
+    <section className="dashboard-main-grid">
+      <article className="dashboard-card performance-card"><div className="dashboard-card-head"><div><span className="section-kicker">Project performance</span><h2>Plan versus actual progress</h2></div><span className="period-select">Last 12 weeks⌄</span></div><div className="chart-legend"><span><i className="legend-line planned"/> Planned</span><span><i className="legend-line actual"/> Actual</span><span className="chart-gap">Current gap <strong>8.4%</strong></span></div><div className="line-chart" role="img" aria-label="Cumulative planned progress rises from 28 to 74 percent while actual progress rises from 27 to 65 percent, opening an 8.4 percent gap"><div className="chart-y"><span>80%</span><span>60%</span><span>40%</span><span>20%</span><span>0%</span></div><svg viewBox="0 0 760 230" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#7a1735" stopOpacity=".16"/><stop offset="1" stopColor="#7a1735" stopOpacity="0"/></linearGradient></defs><g className="grid-lines"><path d="M0 18H760M0 69H760M0 120H760M0 171H760M0 222H760"/></g><path className="chart-area" d="M0 164 C60 156 88 145 130 137 S215 117 260 108 S345 88 390 76 S475 57 520 48 S615 28 650 22 S720 13 760 10 V230H0Z"/><path className="planned-line" d="M0 164 C60 156 88 145 130 137 S215 117 260 108 S345 88 390 76 S475 57 520 48 S615 28 650 22 S720 13 760 10"/><path className="actual-line" d="M0 168 C55 160 90 152 130 147 S215 134 260 121 S345 108 390 99 S475 90 520 76 S610 70 650 62 S720 53 760 48"/><line className="current-marker" x1="760" y1="10" x2="760" y2="48"/><circle className="planned-dot" cx="760" cy="10" r="5"/><circle className="actual-dot" cx="760" cy="48" r="5"/></svg><div className="chart-x"><span>Jul 01</span><span>Jul 15</span><span>Jul 29</span><span>Aug 12</span><span>Aug 26</span><span>Sep 09</span></div></div></article>
+      <article className="dashboard-card attention-card"><div className="dashboard-card-head"><div><span className="section-kicker">Attention required</span><h2>Decision priority</h2></div><Link href="/decision-center">View all →</Link></div><div className="priority-donut-row"><div className="donut" role="img" aria-label="18 open cases: 3 critical, 6 high, and 9 standard"><span><strong>18</strong><small>open cases</small></span></div><div className="donut-legend"><span><i className="critical"/><b>Critical</b><strong>3</strong></span><span><i className="high"/><b>High</b><strong>6</strong></span><span><i className="standard"/><b>Standard</b><strong>9</strong></span></div></div><div className="attention-note"><span>!</span><p><strong>2 deadlines within 48 hours</strong><small>Authority review required before action</small></p><Link href="/decision-center">Review</Link></div></article>
+    </section>
+    <section className="dashboard-lower-grid"><article className="dashboard-card signal-feed"><div className="dashboard-card-head"><div><span className="section-kicker">Live intelligence</span><h2>Recent signals</h2></div><Link href="/signals">Signal inbox →</Link></div><div className="signal-feed-list">{signals.map((signal) => <div className="feed-item" key={signal.title}><span className={`feed-symbol ${signal.tone}`}>⌁</span><div><span className={`signal-type ${signal.tone}`}>{signal.type}</span><strong>{signal.title}</strong><small>{signal.detail}</small></div><time>{signal.time}</time></div>)}</div></article><article className="dashboard-card health-card"><div className="dashboard-card-head"><div><span className="section-kicker">Control health</span><h2>Project indicators</h2></div><span className="health-score">72 <small>/ 100</small></span></div><div className="health-bars"><Health label="Schedule" value={64} tone="critical"/><Health label="Cost" value={78} tone="amber"/><Health label="Evidence quality" value={86} tone="good"/><Health label="Governance readiness" value={71} tone="burgundy"/></div><p className="semantic-note"><span>i</span> Indicators summarize controlled records. They are not human decisions or execution authority.</p></article></section>
+  </main>;
 }
+
+function Metric({ label, value, change, icon, tone }: { label: string; value: string; change: string; icon: string; tone: string }) { return <article className="metric-card"><div className={`metric-icon ${tone}`}>{icon}</div><div><span>{label}</span><strong>{value}</strong><small className={tone}>{change}</small></div><span className="metric-arrow">↗</span></article>; }
+function Health({ label, value, tone }: { label: string; value: number; tone: string }) { return <div className="health-row"><div><span>{label}</span><strong>{value}%</strong></div><div className="health-track"><i className={tone} style={{ width: `${value}%` }}/></div></div>; }

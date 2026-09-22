@@ -37,7 +37,7 @@ down:
 	$(COMPOSE) down
 
 api:
-	.venv/bin/fastapi dev services/api/app/main.py
+	PYTHONPATH=services/api .venv/bin/uvicorn app.main:app --reload --reload-dir services/api/app
 
 web:
 	npm run dev:web

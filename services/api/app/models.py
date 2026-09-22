@@ -234,6 +234,431 @@ class EvidenceArtifact(Base):
     )
 
 
+class BoqSourceVersion(Base):
+    __tablename__ = "boq_source_version"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version_number", name="uq_boq_source_project_version"),
+        UniqueConstraint("project_id", "artifact_id", name="uq_boq_source_project_artifact"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_boq_source_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    artifact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("evidence_artifact.id", ondelete="RESTRICT"), index=True
+    )
+    prior_source_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("boq_source_version.id", ondelete="RESTRICT"), index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_format: Mapped[str] = mapped_column(String(20), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    extraction_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    extraction_confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    structure_manifest: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    extracted_row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BoqSourceRow(Base):
+    __tablename__ = "boq_source_row"
+    __table_args__ = (
+        UniqueConstraint("source_version_id", "sequence_number", name="uq_boq_row_sequence"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    source_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_source_version.id", ondelete="RESTRICT"), index=True
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    sheet_name: Mapped[str | None] = mapped_column(String(200))
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    row_number: Mapped[int | None] = mapped_column(Integer)
+    region: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    raw_values: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    original_text: Mapped[str | None] = mapped_column(Text)
+    extraction_confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BoqNormalizationRun(Base):
+    __tablename__ = "boq_normalization_run"
+    __table_args__ = (
+        UniqueConstraint("source_version_id", name="uq_boq_normalization_source"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_boq_normalization_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    source_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_source_version.id", ondelete="RESTRICT"), index=True
+    )
+    normalizer_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    header_rows: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    column_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    schedule_relevant_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_required_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BoqLine(Base):
+    __tablename__ = "boq_line"
+    __table_args__ = (
+        UniqueConstraint("normalization_run_id", "source_row_id", name="uq_boq_line_source_row"),
+        UniqueConstraint("source_version_id", "stable_line_id", name="uq_boq_stable_line"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    stable_line_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    normalization_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_normalization_run.id", ondelete="RESTRICT"), index=True
+    )
+    source_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_source_version.id", ondelete="RESTRICT"), index=True
+    )
+    source_row_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_source_row.id", ondelete="RESTRICT"), index=True
+    )
+    source_location: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    item_number: Mapped[str | None] = mapped_column(String(160))
+    division: Mapped[str | None] = mapped_column(String(240))
+    source_wbs_code: Mapped[str | None] = mapped_column(String(160))
+    item_name: Mapped[str | None] = mapped_column(String(300))
+    description: Mapped[str | None] = mapped_column(Text)
+    unit: Mapped[str | None] = mapped_column(String(80))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(24, 6))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 6))
+    total_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 6))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    location: Mapped[str | None] = mapped_column(String(240))
+    trade: Mapped[str | None] = mapped_column(String(160))
+    package: Mapped[str | None] = mapped_column(String(240))
+    notes: Mapped[str | None] = mapped_column(Text)
+    parent_section: Mapped[str | None] = mapped_column(String(300))
+    source_row_text: Mapped[str | None] = mapped_column(Text)
+    normalized_values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    unmapped_values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    classification: Mapped[str] = mapped_column(String(60), nullable=False)
+    classification_basis: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    schedule_relevant: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    review_state: Mapped[str] = mapped_column(String(30), nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BoqPlanningStructureVersion(Base):
+    __tablename__ = "boq_planning_structure_version"
+    __table_args__ = (
+        UniqueConstraint("normalization_run_id", "version_number", name="uq_boq_structure_version"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_boq_structure_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    normalization_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_normalization_run.id", ondelete="RESTRICT"), index=True
+    )
+    supersedes_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("boq_planning_structure_version.id", ondelete="RESTRICT"), index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    wbs_nodes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    work_packages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    line_mappings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    unmapped_lines: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    assumptions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    change_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScheduleDraftGeneration(Base):
+    __tablename__ = "schedule_draft_generation"
+    __table_args__ = (
+        UniqueConstraint("planning_structure_id", name="uq_schedule_generation_structure"),
+        UniqueConstraint(
+            "project_id", "idempotency_key", name="uq_schedule_generation_idempotency"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    planning_structure_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_planning_structure_version.id", ondelete="RESTRICT"), index=True
+    )
+    generator_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    draft_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    productivity_inputs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    duration_inputs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    activity_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    unresolved_duration_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProposedScheduleActivity(Base):
+    __tablename__ = "proposed_schedule_activity"
+    __table_args__ = (
+        UniqueConstraint("generation_id", "activity_code", name="uq_proposed_activity_code"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("schedule_draft_generation.id", ondelete="RESTRICT"), index=True
+    )
+    activity_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    wbs_node_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    work_package_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    boq_line_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    activity_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    activity_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    trade: Mapped[str | None] = mapped_column(String(160))
+    location: Mapped[str | None] = mapped_column(String(240))
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(24, 6))
+    unit: Mapped[str | None] = mapped_column(String(80))
+    duration_working_days: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    duration_unrounded: Mapped[Decimal | None] = mapped_column(Numeric(24, 10))
+    duration_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    duration_basis: Mapped[str] = mapped_column(String(50), nullable=False)
+    productivity: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    calendar_id: Mapped[str | None] = mapped_column(String(80))
+    responsible_role: Mapped[str | None] = mapped_column(String(160))
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    review_state: Mapped[str] = mapped_column(String(30), nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PlanningAssumption(Base):
+    __tablename__ = "planning_assumption"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("schedule_draft_generation.id", ondelete="RESTRICT"), index=True
+    )
+    proposition: Mapped[str] = mapped_column(Text, nullable=False)
+    reason_needed: Mapped[str] = mapped_column(Text, nullable=False)
+    affected_activity_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    source_basis: Mapped[str] = mapped_column(String(200), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    consequence_if_wrong: Mapped[str] = mapped_column(Text, nullable=False)
+    validation_owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScheduleLogicProposal(Base):
+    __tablename__ = "schedule_logic_proposal"
+    __table_args__ = (
+        UniqueConstraint("generation_id", name="uq_schedule_logic_generation"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_schedule_logic_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("schedule_draft_generation.id", ondelete="RESTRICT"), index=True
+    )
+    logic_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    dependencies: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    milestones: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    constraints: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    calendar: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    sequence_templates: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    assumptions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    review_state: Mapped[str] = mapped_column(String(30), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BootstrapScheduleCalculation(Base):
+    __tablename__ = "bootstrap_schedule_calculation"
+    __table_args__ = (
+        UniqueConstraint("logic_proposal_id", name="uq_bootstrap_calculation_logic"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_bootstrap_calculation_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("schedule_draft_generation.id", ondelete="RESTRICT"), index=True
+    )
+    logic_proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("schedule_logic_proposal.id", ondelete="RESTRICT"), index=True
+    )
+    calculation_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    project_start: Mapped[date] = mapped_column(Date, nullable=False)
+    proposed_finish: Mapped[date | None] = mapped_column(Date)
+    readiness: Mapped[str] = mapped_column(String(40), nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    activity_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    milestone_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    validation_findings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    critical_activity_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BootstrapScheduleRelease(Base):
+    __tablename__ = "bootstrap_schedule_release"
+    __table_args__ = (
+        UniqueConstraint("calculation_id", "version_number", name="uq_bootstrap_release_version"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_bootstrap_release_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    calculation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bootstrap_schedule_calculation.id", ondelete="RESTRICT"), index=True
+    )
+    supersedes_release_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bootstrap_schedule_release.id", ondelete="RESTRICT"), index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(40), nullable=False)
+    schedule_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    edit_history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    review_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_grant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authority_grant.id", ondelete="RESTRICT")
+    )
+    authorized_context_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT")
+    )
+    approval_reference: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BootstrapRevisionDelta(Base):
+    __tablename__ = "bootstrap_revision_delta"
+    __table_args__ = (
+        UniqueConstraint("new_source_version_id", name="uq_bootstrap_delta_new_source"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_bootstrap_delta_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    prior_source_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_source_version.id", ondelete="RESTRICT"), index=True
+    )
+    new_source_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("boq_source_version.id", ondelete="RESTRICT"), index=True
+    )
+    prior_release_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bootstrap_schedule_release.id", ondelete="RESTRICT")
+    )
+    comparison_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    added_scope: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    removed_scope: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    changed_scope: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    mapping_changes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    activity_changes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    schedule_effects: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    current_authorized_context_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT")
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class EvidenceItem(Base):
     __tablename__ = "evidence_item"
 

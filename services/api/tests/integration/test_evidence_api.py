@@ -1,5 +1,7 @@
 import uuid
 from collections.abc import Generator
+from datetime import date as dt_date
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -7,7 +9,19 @@ from typing import Any
 import pytest
 from app.database import Base, get_db
 from app.main import app
-from app.models import EvidenceArtifact, EvidenceItem, EvidenceRelation, VerificationEvent
+from app.models import (
+    BoqLine,
+    BoqNormalizationRun,
+    BoqSourceRow,
+    BoqSourceVersion,
+    EvidenceArtifact,
+    EvidenceItem,
+    EvidenceRelation,
+    ProposedScheduleActivity,
+    ScheduleDraftGeneration,
+    ScheduleLogicProposal,
+    VerificationEvent,
+)
 from app.storage import LocalEvidenceStore, get_evidence_store
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
@@ -153,6 +167,1069 @@ def test_artifact_upload_hash_download_and_csv_import_are_idempotent(
         imported = list(session.scalars(select(EvidenceItem)))
         assert len(imported) == 1
         assert imported[0].value == 0
+
+
+def test_boq_source_preserves_workbook_structure_rows_and_revision_lineage(
+    evidence_api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, sessions = evidence_api
+    _, project_id, headers, _ = bootstrap(client)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Main BOQ"
+    sheet.merge_cells("A1:D1")
+    sheet["A1"] = "Bill of Quantities"
+    sheet.append(["Item", "Description", "Quantity", "Amount", "Unit"])
+    sheet.append(["1.01", "Concrete", 125, "=C3*80", "m3"])
+    sheet.append(["1.02", "Concrete walls", 75, 6000, "m3"])
+    sheet.append([None, "Subtotal", None, 10000, None])
+    sheet.append(["2.01", "Supply of air handling unit", 2, 5000, "nr"])
+    sheet.append(["2.02", "Consultant inspection and approval", 1, 500, "item"])
+    sheet.append(["2.03", "Testing and commissioning", 1, 600, "item"])
+    sheet.append(["2.04", "Site establishment and mobilization", 1, 700, "item"])
+    sheet.append(["2.05", "Supply only of cables", 10, 800, "m"])
+    sheet.append(["X", "Unclear commercial entry", None, None])
+    sheet.column_dimensions["D"].hidden = True
+    second = workbook.create_sheet("Provisional")
+    second.append(["P1", "Allowance", None, 10000])
+    content = BytesIO()
+    workbook.save(content)
+
+    upload_url = f"/api/v1/projects/{project_id}/evidence/artifacts"
+    uploaded = client.post(
+        upload_url,
+        headers=headers,
+        data={"source_type": "BOQ", "source_id": "contract-boq-v1"},
+        files={
+            "upload": (
+                "project-boq.xlsx",
+                content.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    source_url = f"/api/v1/projects/{project_id}/bootstrap/boq-sources"
+    created = client.post(
+        source_url,
+        headers={**headers, "Idempotency-Key": "boq-source-v1"},
+        json={"artifact_id": uploaded.json()["id"]},
+    )
+    assert created.status_code == 201, created.text
+    source = created.json()
+    assert source["version_number"] == 1
+    assert source["content_sha256"] == uploaded.json()["sha256"]
+    assert source["extraction_status"] == "EXTRACTED"
+    assert source["extracted_row_count"] == 12
+    assert [item["sheet_name"] for item in source["structure_manifest"]] == [
+        "Main BOQ",
+        "Provisional",
+    ]
+    assert any(warning["code"] == "MERGED_CELLS_PRESERVED" for warning in source["warnings"])
+    assert any(
+        warning["code"] == "HIDDEN_WORKBOOK_CONTENT_PRESERVED" for warning in source["warnings"]
+    )
+
+    repeated = client.post(
+        source_url,
+        headers={**headers, "Idempotency-Key": "boq-source-v1"},
+        json={"artifact_id": uploaded.json()["id"]},
+    )
+    assert repeated.status_code == 201
+    assert repeated.json()["id"] == source["id"]
+    mismatch = client.post(
+        source_url,
+        headers={**headers, "Idempotency-Key": "boq-source-v1"},
+        json={
+            "artifact_id": uploaded.json()["id"],
+            "prior_source_version_id": str(uuid.uuid4()),
+        },
+    )
+    assert mismatch.status_code == 409
+
+    detail = client.get(f"{source_url}/{source['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    formula_row = next(row for row in detail.json()["rows"] if row["row_number"] == 3)
+    assert formula_row["raw_values"][3] == "=C3*80"
+    assert formula_row["warnings"][0]["code"] == "FORMULA_PRESERVED_NOT_EVALUATED"
+    with sessions() as session:
+        assert len(list(session.scalars(select(BoqSourceVersion)))) == 1
+        assert len(list(session.scalars(select(BoqSourceRow)))) == 12
+
+    normalization_url = f"{source_url}/{source['id']}/normalizations"
+    normalized = client.post(
+        normalization_url,
+        headers={**headers, "Idempotency-Key": "normalize-boq-v1"},
+        json={},
+    )
+    assert normalized.status_code == 201, normalized.text
+    summary = normalized.json()
+    assert summary["total_rows"] == 12
+    assert summary["schedule_relevant_rows"] == 6
+    assert summary["review_required_rows"] == 2
+    assert summary["header_rows"] == {"Main BOQ": 2, "Provisional": 0}
+    replay = client.post(
+        normalization_url,
+        headers={**headers, "Idempotency-Key": "normalize-boq-v1"},
+        json={},
+    )
+    assert replay.status_code == 201
+    assert replay.json()["id"] == summary["id"]
+    mismatch = client.post(
+        normalization_url,
+        headers={**headers, "Idempotency-Key": "normalize-boq-v1"},
+        json={"header_rows": {"Main BOQ": 1}},
+    )
+    assert mismatch.status_code == 409
+
+    normalization = client.get(f"{source_url}/{source['id']}/normalization", headers=headers)
+    assert normalization.status_code == 200, normalization.text
+    lines = normalization.json()["lines"]
+    by_description = {line["description"]: line for line in lines if line["description"]}
+    assert by_description["Concrete"]["classification"] == "DIRECT_EXECUTION_SCOPE"
+    assert by_description["Concrete"]["quantity"] == "125.000000"
+    assert by_description["Concrete"]["schedule_relevant"] is True
+    assert by_description["Concrete"]["review_state"] == "REVIEW_REQUIRED"
+    assert by_description["Subtotal"]["classification"] == "SUBTOTAL_TOTAL"
+    assert by_description["Subtotal"]["schedule_relevant"] is False
+    assert (
+        by_description["Supply of air handling unit"]["classification"] == "PROCUREMENT_OR_SUPPLY"
+    )
+    assert by_description["Consultant inspection and approval"]["classification"] == (
+        "APPROVAL_INSPECTION"
+    )
+    assert by_description["Testing and commissioning"]["classification"] == (
+        "TESTING_COMMISSIONING"
+    )
+    assert by_description["Site establishment and mobilization"]["classification"] == (
+        "PRELIMINARIES_GENERAL"
+    )
+    assert by_description["Supply only of cables"]["classification"] == (
+        "MATERIAL_ONLY_NON_SCHEDULE"
+    )
+    assert by_description["Supply only of cables"]["schedule_relevant"] is False
+    assert by_description["Unclear commercial entry"]["classification"] == (
+        "UNKNOWN_REVIEW_REQUIRED"
+    )
+    assert by_description["Unclear commercial entry"]["review_state"] == "REVIEW_REQUIRED"
+    assert any(
+        line["classification"] == "SUMMARY_HEADER" and not line["schedule_relevant"]
+        for line in lines
+    )
+    provisional_line = next(
+        line for line in lines if line["classification"] == "PROVISIONAL_OR_ALLOWANCE"
+    )
+    assert provisional_line["schedule_relevant"] is False
+    with sessions() as session:
+        assert len(list(session.scalars(select(BoqNormalizationRun)))) == 1
+        assert len(list(session.scalars(select(BoqLine)))) == 12
+
+    structure_url = f"{source_url}/{source['id']}/planning-structures"
+    structure_response = client.post(
+        structure_url,
+        headers={**headers, "Idempotency-Key": "structure-v1"},
+        json={},
+    )
+    assert structure_response.status_code == 201, structure_response.text
+    structure = structure_response.json()
+    assert structure["status"] == "PROPOSED"
+    assert structure["version_number"] == 1
+    assert len(structure["line_mappings"]) == 6
+    assert len(structure["unmapped_lines"]) == 6
+    assert all(node["node_type"] != "AUTHORIZED" for node in structure["wbs_nodes"])
+    repeated_structure = client.post(
+        structure_url,
+        headers={**headers, "Idempotency-Key": "structure-v1"},
+        json={},
+    )
+    assert repeated_structure.json()["id"] == structure["id"]
+
+    direct_package = next(
+        package
+        for package in structure["work_packages"]
+        if package["classification"] == "DIRECT_EXECUTION_SCOPE"
+    )
+    direct_lines = [
+        mapping
+        for mapping in structure["line_mappings"]
+        if mapping["work_package_id"] == direct_package["id"]
+    ]
+    assert len(direct_lines) == 2
+    revision_url = f"/api/v1/projects/{project_id}/bootstrap/planning-structures"
+    split = client.post(
+        f"{revision_url}/{structure['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "structure-split"},
+        json={
+            "action": "SPLIT_PACKAGE",
+            "package_ids": [direct_package["id"]],
+            "line_ids": [direct_lines[0]["boq_line_id"]],
+            "new_package_names": ["Concrete base", "Concrete walls"],
+            "reason": "Planner separated crews and measurable scope",
+        },
+    )
+    assert split.status_code == 201, split.text
+    assert split.json()["version_number"] == 2
+    assert split.json()["supersedes_version_id"] == structure["id"]
+    split_ids = split.json()["change_summary"]["new_package_ids"]
+
+    stale = client.post(
+        f"{revision_url}/{structure['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "structure-stale"},
+        json={
+            "action": "REJECT_PROPOSAL",
+            "reason": "This stale proposal should not be revisable",
+        },
+    )
+    assert stale.status_code == 409
+
+    merged = client.post(
+        f"{revision_url}/{split.json()['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "structure-merge"},
+        json={
+            "action": "MERGE_PACKAGES",
+            "package_ids": split_ids,
+            "new_package_names": ["Concrete works"],
+            "reason": "Planner confirmed one shared delivery package",
+        },
+    )
+    assert merged.status_code == 201, merged.text
+    merged_id = merged.json()["change_summary"]["new_package_id"]
+    approval_mapping = next(
+        mapping
+        for mapping in merged.json()["line_mappings"]
+        if next(line for line in lines if line["id"] == mapping["boq_line_id"])["classification"]
+        == "APPROVAL_INSPECTION"
+    )
+    approval_package = next(
+        package
+        for package in merged.json()["work_packages"]
+        if package["classification"] == "APPROVAL_INSPECTION"
+    )
+    remapped = client.post(
+        f"{revision_url}/{merged.json()['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "structure-remap"},
+        json={
+            "action": "REMAP_LINE",
+            "line_ids": [approval_mapping["boq_line_id"]],
+            "target_package_id": approval_package["id"],
+            "reason": "Planner confirmed approval scope package mapping",
+        },
+    )
+    assert remapped.status_code == 201, remapped.text
+    rejected = client.post(
+        f"{revision_url}/{remapped.json()['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "structure-reject"},
+        json={
+            "action": "REJECT_PROPOSAL",
+            "reason": "Planner rejected the proposal pending final review",
+        },
+    )
+    assert rejected.status_code == 201, rejected.text
+    assert rejected.json()["status"] == "REJECTED"
+    accepted = client.post(
+        f"{revision_url}/{rejected.json()['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "structure-accept"},
+        json={
+            "action": "ACCEPT_PROPOSAL",
+            "reason": "Planner reviewed all proposed mappings and packages",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["status"] == "REVIEWED"
+    history = client.get(structure_url, headers=headers)
+    assert [item["version_number"] for item in history.json()] == [1, 2, 3, 4, 5, 6]
+
+    draft_url = f"{revision_url}/{accepted.json()['id']}/schedule-drafts"
+    draft = client.post(
+        draft_url,
+        headers={**headers, "Idempotency-Key": "schedule-draft-v1"},
+        json={
+            "validation_owner": "planner@example.test",
+            "productivity_inputs": [
+                {
+                    "work_package_id": merged_id,
+                    "rate_per_working_day": "50",
+                    "quantity_unit": "m3",
+                    "source_type": "PROJECT_HISTORICAL_ACTUAL",
+                    "source_reference": "Project productivity record PR-01",
+                    "source_date": "2026-09-01",
+                    "source_version": "1",
+                    "confidence": "HIGH",
+                    "review_state": "ACCEPTED",
+                }
+            ],
+        },
+    )
+    assert draft.status_code == 201, draft.text
+    assert draft.json()["draft_state"] == "VERIFICATION_REQUIRED"
+    assert draft.json()["activity_count"] == 7
+    assert draft.json()["unresolved_duration_count"] == 6
+    repeated_draft = client.post(
+        draft_url,
+        headers={**headers, "Idempotency-Key": "schedule-draft-v1"},
+        json={
+            "validation_owner": "planner@example.test",
+            "productivity_inputs": [
+                {
+                    "work_package_id": merged_id,
+                    "rate_per_working_day": "50",
+                    "quantity_unit": "m3",
+                    "source_type": "PROJECT_HISTORICAL_ACTUAL",
+                    "source_reference": "Project productivity record PR-01",
+                    "source_date": "2026-09-01",
+                    "source_version": "1",
+                    "confidence": "HIGH",
+                    "review_state": "ACCEPTED",
+                }
+            ],
+        },
+    )
+    assert repeated_draft.json()["id"] == draft.json()["id"]
+    draft_detail = client.get(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{draft.json()['id']}",
+        headers=headers,
+    )
+    assert draft_detail.status_code == 200, draft_detail.text
+    activities = draft_detail.json()["activities"]
+    execution = next(item for item in activities if item["activity_type"] == "EXECUTION")
+    assert execution["quantity"] == "200.000000"
+    assert execution["unit"] == "m3"
+    assert execution["duration_unrounded"] == "4.0000000000"
+    assert execution["duration_working_days"] == "4.000000"
+    assert execution["duration_basis"] == "PROJECT_PRODUCTIVITY"
+    assert execution["duration_status"] == "CALCULATED"
+    assert len(execution["boq_line_refs"]) == 2
+    assert len(draft_detail.json()["assumptions"]) == 6
+    assert all(
+        item["duration_status"] == "VERIFICATION_REQUIRED"
+        for item in activities
+        if item["id"] != execution["id"]
+    )
+    inspection = next(item for item in activities if item["activity_type"] == "INSPECTION_RELEASE")
+    testing = next(item for item in activities if item["activity_type"] == "TESTING_COMMISSIONING")
+    delivery = next(item for item in activities if item["activity_type"] == "DELIVERY")
+    logic_url = (
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{draft.json()['id']}/logic"
+    )
+    logic_payload = {
+        "validation_owner": "planner@example.test",
+        "calendar": {
+            "calendar_id": "PROJECT-6D",
+            "name": "Reviewed six-day project calendar",
+            "working_weekdays": [0, 1, 2, 3, 4, 5],
+            "working_hours_per_day": "8",
+            "holidays": ["2026-12-25"],
+            "review_state": "ACCEPTED",
+        },
+        "dependencies": [
+            {
+                "predecessor_activity_id": inspection["id"],
+                "successor_activity_id": testing["id"],
+                "relation_type": "FINISH_TO_START",
+                "lag_working_days": "0",
+                "basis": "APPROVAL_RELEASE_PREREQUISITE",
+                "source_reference": "Planner rule PR-INSPECT-01",
+                "confidence": "HIGH",
+                "review_state": "ACCEPTED",
+            }
+        ],
+        "sequence_templates": [
+            {
+                "predecessor_activity_id": delivery["id"],
+                "successor_activity_id": execution["id"],
+                "relation_type": "FINISH_TO_START",
+                "lag_working_days": "0",
+                "basis": "VALIDATED_SEQUENCE_TEMPLATE",
+                "source_reference": "Template PROCURE-INSTALL v1",
+                "confidence": "MEDIUM",
+                "review_state": "REVIEW_REQUIRED",
+            }
+        ],
+        "milestones": [
+            {
+                "code": "MS-COMMISSION",
+                "name": "Commissioning complete",
+                "target_date": "2027-03-31",
+                "source_type": "CONTRACT_EVIDENCE",
+                "source_reference": "Contract milestone schedule C-01",
+                "feeds_from_activity_ids": [testing["id"]],
+                "material": True,
+            }
+        ],
+        "constraints": [
+            {
+                "activity_id": execution["id"],
+                "constraint_type": "START_NO_EARLIER_THAN",
+                "constraint_date": "2026-10-01",
+                "source_reference": "Project start notice NTP-01",
+            }
+        ],
+    }
+    logic = client.post(
+        logic_url,
+        headers={**headers, "Idempotency-Key": "schedule-logic-v1"},
+        json=logic_payload,
+    )
+    assert logic.status_code == 201, logic.text
+    logic_result = logic.json()
+    assert len(logic_result["dependencies"]) == 4
+    procurement_dependencies = [
+        item for item in logic_result["dependencies"] if item["basis"] == "PROCUREMENT_PREREQUISITE"
+    ]
+    assert len(procurement_dependencies) == 2
+    assert any(
+        item["predecessor_activity_id"] == inspection["id"]
+        and item["successor_activity_id"] == testing["id"]
+        for item in logic_result["dependencies"]
+    )
+    assert logic_result["calendar"]["review_state"] == "ACCEPTED"
+    assert logic_result["milestones"][0]["status"] == "PROPOSED"
+    assert logic_result["milestones"][0]["authorized"] is False
+    assert logic_result["constraints"][0]["status"] == "PROPOSED"
+    replayed_logic = client.post(
+        logic_url,
+        headers={**headers, "Idempotency-Key": "schedule-logic-v1"},
+        json=logic_payload,
+    )
+    assert replayed_logic.json()["id"] == logic_result["id"]
+    loaded_logic = client.get(logic_url, headers=headers)
+    assert loaded_logic.json()["id"] == logic_result["id"]
+
+    workbook["Main BOQ"].append(["1.02", "Rebar", 15, 12000])
+    revised_content = BytesIO()
+    workbook.save(revised_content)
+    revised_upload = client.post(
+        upload_url,
+        headers=headers,
+        data={
+            "source_type": "BOQ",
+            "source_id": "contract-boq-v2",
+            "supersedes_artifact_id": uploaded.json()["id"],
+        },
+        files={"upload": ("project-boq-v2.xlsx", revised_content.getvalue())},
+    )
+    assert revised_upload.status_code == 201, revised_upload.text
+    revised = client.post(
+        source_url,
+        headers={**headers, "Idempotency-Key": "boq-source-v2"},
+        json={
+            "artifact_id": revised_upload.json()["id"],
+            "prior_source_version_id": source["id"],
+        },
+    )
+    assert revised.status_code == 201, revised.text
+    assert revised.json()["version_number"] == 2
+    assert revised.json()["prior_source_version_id"] == source["id"]
+    revised_normalization = client.post(
+        f"{source_url}/{revised.json()['id']}/normalizations",
+        headers={**headers, "Idempotency-Key": "normalize-boq-v2"},
+        json={},
+    )
+    assert revised_normalization.status_code == 201, revised_normalization.text
+    delta = client.post(
+        f"{source_url}/{revised.json()['id']}/revision-delta",
+        headers={**headers, "Idempotency-Key": "delta-boq-v2"},
+        json={},
+    )
+    assert delta.status_code == 201, delta.text
+    assert delta.json()["prior_source_version_id"] == source["id"]
+    assert len(delta.json()["added_scope"]) == 1
+    assert delta.json()["schedule_effects"]["authorized_schedule_unchanged"] is True
+    loaded_delta = client.get(
+        f"{source_url}/{revised.json()['id']}/revision-delta", headers=headers
+    )
+    assert loaded_delta.status_code == 200
+    assert loaded_delta.json()["id"] == delta.json()["id"]
+
+
+@pytest.mark.parametrize(
+    ("relation_type", "expected_finish", "expected_second_float"),
+    [
+        ("FINISH_TO_START", "2026-10-09", "0"),
+        ("START_TO_START", "2026-10-07", "1"),
+    ],
+)
+def test_bootstrap_cpm_review_authority_and_exports(
+    evidence_api: tuple[TestClient, sessionmaker[Session]],
+    relation_type: str,
+    expected_finish: str,
+    expected_second_float: str,
+) -> None:
+    client, sessions = evidence_api
+    organization_id, project_id, headers, _ = bootstrap(client)
+    generation_id = uuid.uuid4()
+    first_id, second_id = uuid.uuid4(), uuid.uuid4()
+    with sessions() as session:
+        session.add(
+            ScheduleDraftGeneration(
+                id=generation_id,
+                organization_id=uuid.UUID(organization_id),
+                project_id=uuid.UUID(project_id),
+                planning_structure_id=uuid.uuid4(),
+                generator_version="test",
+                draft_state="DRAFT_GENERATED",
+                productivity_inputs=[],
+                duration_inputs=[],
+                warnings=[],
+                activity_count=2,
+                unresolved_duration_count=0,
+                idempotency_key="seed-generation",
+                request_hash="a" * 64,
+                created_by="evidence-admin@example.test",
+            )
+        )
+        for activity_id, code, duration in (
+            (first_id, "ACT-001", "3"),
+            (second_id, "ACT-002", "2"),
+        ):
+            session.add(
+                ProposedScheduleActivity(
+                    id=activity_id,
+                    organization_id=uuid.UUID(organization_id),
+                    project_id=uuid.UUID(project_id),
+                    generation_id=generation_id,
+                    activity_code=code,
+                    wbs_node_id="WBS-1",
+                    work_package_id=f"WP-{code}",
+                    boq_line_refs=[str(uuid.uuid4())],
+                    activity_name=f"Test {code}",
+                    activity_type="EXECUTION",
+                    description="Traceable execution task",
+                    duration_working_days=Decimal(duration),
+                    duration_unrounded=Decimal(duration),
+                    duration_status="EXPLICIT",
+                    duration_basis="EXPLICIT_PROJECT_INPUT",
+                    confidence="HIGH",
+                    review_state="ACCEPTED",
+                    warnings=[],
+                )
+            )
+        logic_id = uuid.uuid4()
+        session.add(
+            ScheduleLogicProposal(
+                id=logic_id,
+                organization_id=uuid.UUID(organization_id),
+                project_id=uuid.UUID(project_id),
+                generation_id=generation_id,
+                logic_version="test",
+                dependencies=[
+                    {
+                        "predecessor_activity_id": str(first_id),
+                        "successor_activity_id": str(second_id),
+                        "relation_type": relation_type,
+                        "lag_working_days": "0",
+                        "basis": "PHYSICAL_PREREQUISITE",
+                        "source_reference": "test",
+                        "confidence": "HIGH",
+                        "review_state": "ACCEPTED",
+                        "generated": False,
+                    }
+                ],
+                milestones=[],
+                constraints=[],
+                calendar={
+                    "calendar_id": "PROJECT",
+                    "name": "Reviewed calendar",
+                    "working_weekdays": [0, 1, 2, 3, 4],
+                    "working_hours_per_day": "8",
+                    "holidays": [],
+                    "shift_pattern": None,
+                    "review_state": "ACCEPTED",
+                },
+                sequence_templates=[],
+                assumptions=[],
+                warnings=[],
+                review_state="ACCEPTED",
+                idempotency_key="seed-logic",
+                request_hash="b" * 64,
+                created_by="evidence-admin@example.test",
+            )
+        )
+        session.commit()
+
+    calculation = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{generation_id}/calculations",
+        headers={**headers, "Idempotency-Key": "calculate-valid"},
+        json={"project_start": "2026-10-05"},
+    )
+    assert calculation.status_code == 201, calculation.text
+    calculated = calculation.json()
+    assert calculated["readiness"] == "PLANNER_REVIEW_REQUIRED"
+    assert calculated["proposed_finish"] == expected_finish
+    assert calculated["activity_results"][1]["total_float_working_days"] == expected_second_float
+    assert calculated["activity_results"][0]["free_float_working_days"] == "0"
+    assert calculated["input_hash"]
+    replay = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{generation_id}/calculations",
+        headers={**headers, "Idempotency-Key": "calculate-valid"},
+        json={"project_start": "2026-10-05"},
+    )
+    assert replay.status_code == 201
+    assert replay.json()["id"] == calculated["id"]
+    assert replay.json()["input_hash"] == calculated["input_hash"]
+    mismatch = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{generation_id}/calculations",
+        headers={**headers, "Idempotency-Key": "calculate-valid"},
+        json={"project_start": "2026-10-06"},
+    )
+    assert mismatch.status_code == 409
+
+    review = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-calculations/{calculated['id']}/reviews",
+        headers={**headers, "Idempotency-Key": "review-valid"},
+        json={
+            "reason": "Planner checked logic, dates, calendar, and traceability.",
+            "edits": [
+                {
+                    "field_path": "activities.ACT-001.responsible_owner",
+                    "original_value": "PROJECT_DELIVERY_MANAGER",
+                    "revised_value": "Site manager",
+                    "reason": "Assign the accountable delivery owner.",
+                }
+            ],
+        },
+    )
+    assert review.status_code == 201, review.text
+    assert review.json()["state"] == "PM_APPROVAL_REQUIRED"
+    assert review.json()["edit_history"][0]["actor_id"] == "evidence-admin@example.test"
+
+    denied = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-releases/{review.json()['id']}/approve",
+        headers={**headers, "Idempotency-Key": "approve-denied"},
+        json={
+            "authority_grant_id": str(uuid.uuid4()),
+            "approval_reference": "PM-001",
+            "reason": "Approve reviewed project schedule for control.",
+        },
+    )
+    assert denied.status_code == 403
+    grant = client.post(
+        f"/api/v1/projects/{project_id}/authority-grants",
+        headers=headers,
+        json={
+            "actor_id": "evidence-admin@example.test",
+            "authority_type": "CURRENT_SCHEDULE_APPROVAL",
+            "valid_from": dt_date.today().isoformat(),
+        },
+    )
+    assert grant.status_code == 201, grant.text
+    approved = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-releases/{review.json()['id']}/approve",
+        headers={**headers, "Idempotency-Key": "approve-valid"},
+        json={
+            "authority_grant_id": grant.json()["id"],
+            "approval_reference": "PM-001",
+            "reason": "Approve reviewed project schedule for control.",
+        },
+    )
+    assert approved.status_code == 201, approved.text
+    assert approved.json()["state"] == "CURRENT_AUTHORIZED"
+    duplicate_approval = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-releases/{review.json()['id']}/approve",
+        headers={**headers, "Idempotency-Key": "approve-again"},
+        json={
+            "authority_grant_id": grant.json()["id"],
+            "approval_reference": "PM-002",
+            "reason": "Attempt to approve the same reviewed release again.",
+        },
+    )
+    assert duplicate_approval.status_code == 409
+    current = client.get(
+        f"/api/v1/projects/{project_id}/authorized-context/current/SCHEDULE", headers=headers
+    )
+    assert current.status_code == 200
+    assert current.json()["id"] == approved.json()["authorized_context_id"]
+    for export_format, media_type in (
+        ("json", "application/json"),
+        ("csv", "text/csv"),
+        ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ):
+        exported = client.get(
+            f"/api/v1/projects/{project_id}/bootstrap/schedule-releases/{approved.json()['id']}/export/{export_format}",
+            headers=headers,
+        )
+        assert exported.status_code == 200
+        assert exported.headers["content-type"].startswith(media_type)
+        if export_format == "json":
+            assert exported.json()["export_metadata"]["semantic_state"] == "CURRENT_AUTHORIZED"
+            assert (
+                exported.json()["export_metadata"]["authorized_context_id"]
+                == approved.json()["authorized_context_id"]
+            )
+        if export_format == "csv":
+            assert b"semantic_notice" in exported.content
+            assert b"CURRENT_AUTHORIZED" in exported.content
+
+
+@pytest.mark.parametrize(
+    ("conflict_mode", "expected_finding"),
+    [
+        ("cycle", "DEPENDENCY_CYCLE"),
+        ("constraint", "CONSTRAINT_CONFLICT"),
+        ("milestone", "NEGATIVE_FLOAT"),
+        ("invalid_lag", "INVALID_LAG"),
+        ("invalid_duration", "INVALID_DURATION"),
+        ("weak_critical", "WEAK_CRITICAL_ASSUMPTION"),
+        ("missing_prerequisite", "MISSING_PREREQUISITE"),
+    ],
+)
+def test_bootstrap_dependency_cycle_blocks_review(
+    evidence_api: tuple[TestClient, sessionmaker[Session]],
+    conflict_mode: str,
+    expected_finding: str,
+) -> None:
+    client, sessions = evidence_api
+    organization_id, project_id, headers, _ = bootstrap(client)
+    generation_id = uuid.uuid4()
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    with sessions() as session:
+        session.add(
+            ScheduleDraftGeneration(
+                id=generation_id,
+                organization_id=uuid.UUID(organization_id),
+                project_id=uuid.UUID(project_id),
+                planning_structure_id=uuid.uuid4(),
+                generator_version="test",
+                draft_state="DRAFT_GENERATED",
+                productivity_inputs=[],
+                duration_inputs=[],
+                warnings=[],
+                activity_count=2,
+                unresolved_duration_count=0,
+                idempotency_key="cycle-generation",
+                request_hash="c" * 64,
+                created_by="evidence-admin@example.test",
+            )
+        )
+        for index, activity_id in enumerate(ids):
+            session.add(
+                ProposedScheduleActivity(
+                    id=activity_id,
+                    organization_id=uuid.UUID(organization_id),
+                    project_id=uuid.UUID(project_id),
+                    generation_id=generation_id,
+                    activity_code=f"CYCLE-{index}",
+                    wbs_node_id="WBS",
+                    work_package_id="WP",
+                    boq_line_refs=[str(uuid.uuid4())],
+                    activity_name=f"Cycle {index}",
+                    activity_type=(
+                        ("SUBMITTAL", "PROCUREMENT")[index]
+                        if conflict_mode == "missing_prerequisite"
+                        else "EXECUTION"
+                    ),
+                    description="Cycle test",
+                    duration_working_days=Decimal(
+                        "1.5" if conflict_mode == "invalid_duration" and index == 1 else "1"
+                    ),
+                    duration_unrounded=Decimal(
+                        "1.5" if conflict_mode == "invalid_duration" and index == 1 else "1"
+                    ),
+                    duration_status="EXPLICIT",
+                    duration_basis="EXPLICIT_PROJECT_INPUT",
+                    confidence="LOW" if conflict_mode == "weak_critical" else "HIGH",
+                    review_state="ACCEPTED",
+                    warnings=[],
+                )
+            )
+        dependencies = [
+            {
+                "predecessor_activity_id": str(ids[index]),
+                "successor_activity_id": str(ids[1 - index]),
+                "relation_type": "FINISH_TO_START",
+                "lag_working_days": "0.5" if conflict_mode == "invalid_lag" else "0",
+                "basis": "EXPLICIT_IMPORTED",
+                "source_reference": "cycle",
+                "confidence": "HIGH",
+                "review_state": "ACCEPTED",
+                "generated": False,
+            }
+            for index in range(
+                2
+                if conflict_mode == "cycle"
+                else 0
+                if conflict_mode == "missing_prerequisite"
+                else 1
+            )
+        ]
+        session.add(
+            ScheduleLogicProposal(
+                id=uuid.uuid4(),
+                organization_id=uuid.UUID(organization_id),
+                project_id=uuid.UUID(project_id),
+                generation_id=generation_id,
+                logic_version="test",
+                dependencies=dependencies,
+                milestones=(
+                    [
+                        {
+                            "code": "MS-EARLY",
+                            "name": "Required early completion",
+                            "target_date": "2026-10-05",
+                            "source_type": "CONTRACT_EVIDENCE",
+                            "source_reference": "test milestone",
+                            "feeds_from_activity_ids": [str(ids[1])],
+                            "material": True,
+                            "status": "PROPOSED",
+                            "authorized": False,
+                        }
+                    ]
+                    if conflict_mode == "milestone"
+                    else []
+                ),
+                constraints=(
+                    [
+                        {
+                            "activity_id": str(ids[1]),
+                            "constraint_type": "MUST_FINISH_ON",
+                            "constraint_date": "2026-10-05",
+                            "source_reference": "test constraint",
+                        }
+                    ]
+                    if conflict_mode == "constraint"
+                    else []
+                ),
+                calendar={
+                    "calendar_id": "PROJECT",
+                    "name": "Reviewed",
+                    "working_weekdays": [0, 1, 2, 3, 4],
+                    "working_hours_per_day": "8",
+                    "holidays": [],
+                    "review_state": "ACCEPTED",
+                },
+                sequence_templates=[],
+                assumptions=[],
+                warnings=[],
+                review_state="ACCEPTED",
+                idempotency_key="cycle-logic",
+                request_hash="d" * 64,
+                created_by="evidence-admin@example.test",
+            )
+        )
+        session.commit()
+    calculation = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{generation_id}/calculations",
+        headers={**headers, "Idempotency-Key": "calculate-cycle"},
+        json={"project_start": "2026-10-05"},
+    )
+    assert calculation.status_code == 201, calculation.text
+    assert calculation.json()["readiness"] == "VALIDATION_BLOCKED"
+    assert any(
+        item["code"] == expected_finding for item in calculation.json()["validation_findings"]
+    )
+    review = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-calculations/{calculation.json()['id']}/reviews",
+        headers={**headers, "Idempotency-Key": "review-cycle"},
+        json={"reason": "Attempt review despite the dependency cycle."},
+    )
+    assert review.status_code == 409
+
+
+def test_bootstrap_real_xlsx_to_authorized_schedule_and_revision_isolation(
+    evidence_api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = evidence_api
+    _, project_id, headers, _ = bootstrap(client)
+    prefix = f"/api/v1/projects/{project_id}"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Concrete works"
+    sheet.append(["Item", "Description", "Quantity", "Unit"])
+    sheet.append(["C-01", "Concrete foundations", 120, "m3"])
+    sheet.append(["C-02", "Concrete columns", 80, "m3"])
+    sheet.append([None, "Subtotal", 200, "m3"])
+    content = BytesIO()
+    workbook.save(content)
+    upload = client.post(
+        f"{prefix}/evidence/artifacts",
+        headers=headers,
+        data={"source_type": "BOQ", "source_id": "pilot-boq-1"},
+        files={"upload": ("pilot-boq.xlsx", content.getvalue())},
+    )
+    assert upload.status_code == 201, upload.text
+    source = client.post(
+        f"{prefix}/bootstrap/boq-sources",
+        headers={**headers, "Idempotency-Key": "pilot-source"},
+        json={"artifact_id": upload.json()["id"]},
+    )
+    assert source.status_code == 201, source.text
+    source_id = source.json()["id"]
+    normalization = client.post(
+        f"{prefix}/bootstrap/boq-sources/{source_id}/normalizations",
+        headers={**headers, "Idempotency-Key": "pilot-normalize"},
+        json={},
+    )
+    assert normalization.status_code == 201, normalization.text
+    assert normalization.json()["schedule_relevant_rows"] == 2
+    structure = client.post(
+        f"{prefix}/bootstrap/boq-sources/{source_id}/planning-structures",
+        headers={**headers, "Idempotency-Key": "pilot-structure"},
+        json={},
+    )
+    assert structure.status_code == 201, structure.text
+    assert len(structure.json()["line_mappings"]) == 2
+    package_id = structure.json()["work_packages"][0]["id"]
+    reviewed_structure = client.post(
+        f"{prefix}/bootstrap/planning-structures/{structure.json()['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "pilot-structure-review"},
+        json={"action": "ACCEPT_PROPOSAL", "reason": "Planner checked BOQ grouping and scope."},
+    )
+    assert reviewed_structure.status_code == 201, reviewed_structure.text
+    draft = client.post(
+        f"{prefix}/bootstrap/planning-structures/{reviewed_structure.json()['id']}/schedule-drafts",
+        headers={**headers, "Idempotency-Key": "pilot-draft"},
+        json={
+            "validation_owner": "planner@example.test",
+            "productivity_inputs": [
+                {
+                    "work_package_id": package_id,
+                    "rate_per_working_day": "50",
+                    "quantity_unit": "m3",
+                    "source_type": "PROJECT_HISTORICAL_ACTUAL",
+                    "source_reference": "Measured project record PR-01",
+                    "source_version": "1",
+                    "confidence": "HIGH",
+                    "review_state": "ACCEPTED",
+                }
+            ],
+        },
+    )
+    assert draft.status_code == 201, draft.text
+    detail = client.get(f"{prefix}/bootstrap/schedule-drafts/{draft.json()['id']}", headers=headers)
+    assert detail.status_code == 200
+    assert len(detail.json()["activities"]) == 1
+    assert detail.json()["activities"][0]["duration_working_days"] == "4.000000"
+    assert len(detail.json()["activities"][0]["boq_line_refs"]) == 2
+    logic = client.post(
+        f"{prefix}/bootstrap/schedule-drafts/{draft.json()['id']}/logic",
+        headers={**headers, "Idempotency-Key": "pilot-logic"},
+        json={
+            "validation_owner": "planner@example.test",
+            "calendar": {
+                "calendar_id": "PROJECT",
+                "name": "Reviewed six-day calendar",
+                "working_weekdays": [0, 1, 2, 3, 4, 5],
+                "working_hours_per_day": 8,
+                "holidays": [],
+                "review_state": "ACCEPTED",
+            },
+        },
+    )
+    assert logic.status_code == 201, logic.text
+    calculation = client.post(
+        f"{prefix}/bootstrap/schedule-drafts/{draft.json()['id']}/calculations",
+        headers={**headers, "Idempotency-Key": "pilot-cpm"},
+        json={"project_start": "2026-10-05"},
+    )
+    assert calculation.status_code == 201, calculation.text
+    assert calculation.json()["readiness"] == "PLANNER_REVIEW_REQUIRED"
+    assert calculation.json()["proposed_finish"] == "2026-10-08"
+    review = client.post(
+        f"{prefix}/bootstrap/schedule-calculations/{calculation.json()['id']}/reviews",
+        headers={**headers, "Idempotency-Key": "pilot-review"},
+        json={"reason": "Planner validated four working days and the six-day calendar."},
+    )
+    assert review.status_code == 201, review.text
+    grant = client.post(
+        f"{prefix}/authority-grants",
+        headers=headers,
+        json={
+            "actor_id": "evidence-admin@example.test",
+            "authority_type": "CURRENT_SCHEDULE_APPROVAL",
+            "valid_from": dt_date.today().isoformat(),
+        },
+    )
+    assert grant.status_code == 201, grant.text
+    approved = client.post(
+        f"{prefix}/bootstrap/schedule-releases/{review.json()['id']}/approve",
+        headers={**headers, "Idempotency-Key": "pilot-approve"},
+        json={
+            "authority_grant_id": grant.json()["id"],
+            "approval_reference": "PM-SCH-001",
+            "reason": "Approve reviewed BOQ-derived project control schedule.",
+        },
+    )
+    assert approved.status_code == 201, approved.text
+    context_id = approved.json()["authorized_context_id"]
+    assert context_id
+    revised_sheet = workbook.active
+    revised_sheet.append(["C-03", "Concrete beams", 20, "m3"])
+    revised_content = BytesIO()
+    workbook.save(revised_content)
+    revised_upload = client.post(
+        f"{prefix}/evidence/artifacts",
+        headers=headers,
+        data={
+            "source_type": "BOQ",
+            "source_id": "pilot-boq-2",
+            "supersedes_artifact_id": upload.json()["id"],
+        },
+        files={"upload": ("pilot-boq-v2.xlsx", revised_content.getvalue())},
+    )
+    assert revised_upload.status_code == 201, revised_upload.text
+    revised_source = client.post(
+        f"{prefix}/bootstrap/boq-sources",
+        headers={**headers, "Idempotency-Key": "pilot-source-2"},
+        json={
+            "artifact_id": revised_upload.json()["id"],
+            "prior_source_version_id": source_id,
+        },
+    )
+    assert revised_source.status_code == 201, revised_source.text
+    revised_id = revised_source.json()["id"]
+    revised_normalization = client.post(
+        f"{prefix}/bootstrap/boq-sources/{revised_id}/normalizations",
+        headers={**headers, "Idempotency-Key": "pilot-normalize-2"},
+        json={},
+    )
+    assert revised_normalization.status_code == 201, revised_normalization.text
+    revised_structure = client.post(
+        f"{prefix}/bootstrap/boq-sources/{revised_id}/planning-structures",
+        headers={**headers, "Idempotency-Key": "pilot-structure-2"},
+        json={},
+    )
+    assert revised_structure.status_code == 201, revised_structure.text
+    unapproved_prior = client.post(
+        f"{prefix}/bootstrap/boq-sources/{revised_id}/revision-delta",
+        headers={**headers, "Idempotency-Key": "pilot-delta-unapproved"},
+        json={"prior_release_id": review.json()["id"]},
+    )
+    assert unapproved_prior.status_code == 422
+    delta = client.post(
+        f"{prefix}/bootstrap/boq-sources/{revised_id}/revision-delta",
+        headers={**headers, "Idempotency-Key": "pilot-delta"},
+        json={"prior_release_id": approved.json()["id"]},
+    )
+    assert delta.status_code == 201, delta.text
+    assert len(delta.json()["added_scope"]) == 1
+    assert len(delta.json()["mapping_changes"]) >= 1
+    assert delta.json()["current_authorized_context_id"] == context_id
+    current = client.get(f"{prefix}/authorized-context/current/SCHEDULE", headers=headers)
+    assert current.status_code == 200
+    assert current.json()["id"] == context_id
+
+
+def test_pdf_boq_is_preserved_but_requires_governed_extraction_adapter(
+    evidence_api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = evidence_api
+    _, project_id, headers, _ = bootstrap(client)
+    uploaded = client.post(
+        f"/api/v1/projects/{project_id}/evidence/artifacts",
+        headers=headers,
+        data={"source_type": "BOQ", "source_id": "scanned-boq"},
+        files={"upload": ("scanned-boq.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    source = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/boq-sources",
+        headers={**headers, "Idempotency-Key": "pdf-boq-1"},
+        json={"artifact_id": uploaded.json()["id"]},
+    )
+    assert source.status_code == 201, source.text
+    assert source.json()["extraction_status"] == "VERIFICATION_REQUIRED"
+    assert source.json()["extracted_row_count"] == 0
+    assert source.json()["warnings"][0]["code"] == "PDF_EXTRACTION_ADAPTER_REQUIRED"
 
 
 def test_artifact_type_and_malware_gates_reject_before_storage(

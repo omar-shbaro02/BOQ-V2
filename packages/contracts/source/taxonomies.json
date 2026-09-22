@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.8.0",
   "taxonomies": {
     "SemanticState": [
       "BASELINE",
@@ -247,6 +247,106 @@
       "INCONCLUSIVE"
     ],
     "LearningCategory": ["PRODUCT", "DATA", "POLICY", "USABILITY", "METHODOLOGY"],
+    "BoqExtractionStatus": [
+      "RECEIVED",
+      "EXTRACTED",
+      "VERIFICATION_REQUIRED",
+      "FAILED"
+    ],
+    "BoqRowClass": [
+      "DIRECT_EXECUTION_SCOPE",
+      "PROCUREMENT_OR_SUPPLY",
+      "TESTING_COMMISSIONING",
+      "APPROVAL_INSPECTION",
+      "PRELIMINARIES_GENERAL",
+      "SUMMARY_HEADER",
+      "SUBTOTAL_TOTAL",
+      "PROVISIONAL_OR_ALLOWANCE",
+      "MATERIAL_ONLY_NON_SCHEDULE",
+      "UNKNOWN_REVIEW_REQUIRED"
+    ],
+    "ScheduleActivityArchetype": [
+      "SUBMITTAL",
+      "PROCUREMENT",
+      "DELIVERY",
+      "MOBILIZATION",
+      "EXECUTION",
+      "INSPECTION_RELEASE",
+      "TESTING_COMMISSIONING",
+      "HANDOVER",
+      "MILESTONE",
+      "PLANNING_PLACEHOLDER"
+    ],
+    "PlanningConfidence": ["HIGH", "MEDIUM", "LOW", "INSUFFICIENT"],
+    "PlanningAssumptionStatus": ["OPEN", "VALIDATED", "REJECTED", "SUPERSEDED"],
+    "ScheduleDraftState": [
+      "DRAFT_GENERATED",
+      "VERIFICATION_REQUIRED",
+      "PLANNER_REVIEW_READY",
+      "PLANNER_REVIEWED",
+      "PM_APPROVAL_REQUIRED",
+      "CURRENT_AUTHORIZED",
+      "BASELINE_AUTHORIZED"
+    ],
+    "PlanningReviewState": [
+      "NOT_REVIEWED",
+      "REVIEW_REQUIRED",
+      "ACCEPTED",
+      "REVISED",
+      "REJECTED"
+    ],
+    "PlanningStructureStatus": ["PROPOSED", "REVIEWED", "REJECTED"],
+    "PlanningStructureAction": [
+      "GENERATE",
+      "SPLIT_PACKAGE",
+      "MERGE_PACKAGES",
+      "REMAP_LINE",
+      "ACCEPT_PROPOSAL",
+      "REJECT_PROPOSAL"
+    ],
+    "DurationStatus": ["CALCULATED", "EXPLICIT", "VERIFICATION_REQUIRED"],
+    "DurationBasis": [
+      "EXPLICIT_PROJECT_DURATION",
+      "PROJECT_PRODUCTIVITY",
+      "CONTROLLED_PRODUCTIVITY_LIBRARY",
+      "TEMPLATE_RULE",
+      "UNRESOLVED"
+    ],
+    "ProductivitySourceType": [
+      "PROJECT_HISTORICAL_ACTUAL",
+      "COMPANY_HISTORICAL_BENCHMARK",
+      "PLANNER_INPUT",
+      "SUBCONTRACTOR_PLAN",
+      "CONTROLLED_REFERENCE_LIBRARY",
+      "EXPLICIT_ASSUMPTION"
+    ],
+    "DependencyBasis": [
+      "EXPLICIT_IMPORTED",
+      "PROJECT_PLANNING_RULE",
+      "VALIDATED_SEQUENCE_TEMPLATE",
+      "PHYSICAL_PREREQUISITE",
+      "APPROVAL_RELEASE_PREREQUISITE",
+      "PROCUREMENT_PREREQUISITE",
+      "LOCATION_TRADE_SEQUENCE",
+      "BOUNDED_SEMANTIC_SUGGESTION"
+    ],
+    "MilestoneSourceType": [
+      "PROJECT_SETUP",
+      "CONTRACT_EVIDENCE",
+      "BOQ_WORDING",
+      "HANDOVER_REQUIREMENT",
+      "USER_INPUT"
+    ],
+    "BootstrapReadiness": [
+      "DRAFT_GENERATED",
+      "VALIDATION_BLOCKED",
+      "PLANNER_REVIEW_REQUIRED",
+      "PM_APPROVAL_REQUIRED",
+      "CURRENT_AUTHORIZED",
+      "BASELINE_AUTHORIZED"
+    ],
+    "BootstrapValidationSeverity": ["INFO", "WARNING", "BLOCKER"],
+    "BootstrapExportFormat": ["JSON", "CSV", "XLSX"],
     "ProjectRole": [
       "ORGANIZATION_ADMIN",
       "PROJECT_ADMIN",

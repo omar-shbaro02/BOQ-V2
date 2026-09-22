@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.auth import ActorContext
+from app.config import get_settings
 from app.generated.taxonomies import (
     CaseLedgerEventType,
     CaseLifecycle,
@@ -37,6 +38,7 @@ from app.models import (
     SpecialistRun,
 )
 from app.orchestration_schemas import ContradictionResolutionCreate, OrchestrationCreate
+from app.services.agent_automation import run_specialist_agent
 from app.services.cases import add_ledger, audit_case, require_version, scoped_case
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -103,6 +105,44 @@ def _specialist(
     if kind == SpecialistKind.IMPACT_PRIORITY and value:
         confidence = Decimal(str(value.overall_confidence))
     truth_type = getattr(value, "truth_type", None) if value else None
+    input_references = {"snapshot_id": str(run.snapshot_id), "requested_questions": questions}
+    output_references = {output_key: str(value.id)} if value else {}
+    findings: list[dict[str, Any]] = []
+    calculations: list[dict[str, Any]] = []
+    requested_evidence: list[dict[str, Any]] = []
+    settings = get_settings()
+    configured_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else ""
+    if value is not None and settings.openai_agents_enabled and configured_key:
+        selected_input = {
+            column.name: getattr(value, column.name) for column in value.__table__.columns
+        }
+        agent = run_specialist_agent(
+            kind,
+            api_key=configured_key,
+            model=settings.openai_agent_model,
+            snapshot_id=str(run.snapshot_id),
+            selected_input=selected_input,
+            requested_questions=questions,
+            allowed_evidence_ids={str(item) for item in evidence},
+        )
+        agent_output = agent.output
+        findings = agent_output["findings"]
+        calculations = agent_output["calculations"]
+        evidence = agent_output["evidence_references"]
+        limitations = [*limitations, *agent_output["limitations"]]
+        requested_evidence = agent_output["requested_evidence"]
+        contradictions = [*list(contradictions or []), *agent_output["contradictions"]]
+        confidence = min(confidence, Decimal(str(agent_output["confidence"])))
+        input_references.update(
+            {
+                "execution_mode": "OPENAI_AGENT",
+                "agent_model": agent.model,
+                "prompt_version": agent.prompt_version,
+            }
+        )
+        output_references["openai_response_id"] = agent.response_id
+    else:
+        input_references["execution_mode"] = "DETERMINISTIC_FALLBACK"
     return SpecialistRun(
         id=uuid.uuid4(),
         organization_id=run.organization_id,
@@ -113,17 +153,17 @@ def _specialist(
         specialist_kind=kind,
         status=status,
         attempt=attempt,
-        input_references={"snapshot_id": str(run.snapshot_id), "requested_questions": questions},
-        output_references={output_key: str(value.id)} if value else {},
-        findings=[],
-        calculations=[],
+        input_references=input_references,
+        output_references=output_references,
+        findings=findings,
+        calculations=calculations,
         evidence_references=evidence,
         truth_labels=[str(truth_type)] if truth_type else [],
         assumptions=list(getattr(value, "assumptions", [])) if value else [],
         contradictions=list(contradictions or []),
         confidence=confidence,
         limitations=limitations,
-        requested_evidence=[],
+        requested_evidence=requested_evidence,
         contract_version=CONTRACT_VERSION,
         error_class=None,
         completed_at=datetime.now(UTC),

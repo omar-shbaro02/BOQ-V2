@@ -1,10 +1,18 @@
 # Implementation Status
 
-Last updated: 2026-09-15
+Last updated: 2026-09-21
+
+## OpenAI specialist-agent automation continuation (2026-09-21)
+
+The five Phase 10 specialist boundaries now have separate versioned JSON prompt contracts: Evidence & Progress, Schedule & Dependency, Cost & Commercial Control, Forecast & Scenario, and Impact & Priority. A shared Responses API adapter requests strict JSON-schema output, minimizes input to the selected immutable result and snapshot, rejects evidence references outside the supplied allowlist, records model/prompt/response lineage, and caps AI confidence at the deterministic upstream confidence. When an API key is configured, agent findings enrich the immutable `SpecialistRun`; the deterministic orchestrator continues to own contradictions, readiness, disposition, and governance routing. Without a key it retains the prior deterministic fallback. An agent exception remains visible as a failed specialist and invokes the existing critical/noncritical failure gates. The full repository gate passed with **102 tests**, generated-contract freshness, Ruff lint/format, Python compilation, ESLint, strict TypeScript, and the Next.js production build. A configured-key live OpenAI run remains the next verification step.
+
+The customer BOQ-to-schedule request no longer accepts an OpenAI key or Excel template. Credentials are read only from server configuration, with a generic unavailable response when the administrator has not configured AI. VAI now constructs the standard six-column MS Project workbook internally for every tenant. Browser IndexedDB template storage and its upload UI were removed; future credential rotation belongs in a separately authorized administrator surface. The resulting request contract contains only `boq`, `project_start`, and optional `target_finish`. The full repository gate passed with **103 tests**, generated-contract freshness, Ruff, ESLint, strict TypeScript, Python compilation, and the production web build; tests explicitly ran with the API key disabled to prevent external requests.
+
+Live server-only generation was verified on 2026-09-21 against the representative `BOQ 2.pdf` using the configured `gpt-5` schedule model and a 2026-10-01 project start. The API returned HTTP 200 and a built-in workbook containing one `Tasks` sheet, the exact six headers, 30 consolidated activities, sequential IDs, and no invalid predecessor references. The proposal's latest finish was 2028-04-30; no target finish was supplied, and this generated programme remains subject to planner review. The Orchestration UI now exposes each specialist's `OPENAI_AGENT` or deterministic-fallback execution mode, model, prompt version, response ID, validated findings/calculations, limitations, contradictions, evidence requests, and recorded failure class. Frontend lint, strict TypeScript, and production build passed after this display change.
 
 ## Accepted product amendment — BOQ-to-Schedule Bootstrap
 
-Status: **required corrective track; implementation not started**.
+Status: **in progress; B0.1–B0.5 complete; B0.6–B0.8 under verification**.
 
 The BOQ-to-Schedule Bootstrap Amendment v1.0, implementation brief, and frozen 19-stage canonical record supplied on 2026-09-15 were reviewed as product-definition input. The duplicate amendment files were byte-for-byte identical.
 
@@ -13,6 +21,149 @@ The review confirmed a material operational gap: the application can preserve ge
 The repository plan is recorded in `docs/17-boq-to-schedule-bootstrap.md`. It adds eight corrective slices covering source preservation, extraction/normalization, classification, WBS/work packages, activities and duration bases, dependencies/milestones/calendars, deterministic CPM/validation, planner review, authority approval, export, and revision deltas. All BS-001 through BS-010 gates are mandatory.
 
 Existing Phase 0–11 implementation remains reusable downstream. Phase 12 stays open, and its representative human sessions must exercise the BOQ-first workflow after the bootstrap UI exists. Do not begin Phase 13 until this corrective track and the amended Phase 12 acceptance are complete.
+
+### B0.1 — Bootstrap contracts and immutable BOQ source preservation
+
+Status: **complete**.
+
+Delivered:
+
+- Added shared extraction status, BOQ row class, activity archetype, planning confidence, assumption status, schedule-draft state, and planning-review state taxonomies in schema version `1.2.0`.
+- Added immutable project-scoped BOQ source versions linked to existing governed evidence artifacts, exact SHA-256 content digests, parser/version, predecessor, sequential version number, extraction status/confidence, structure manifest, warnings, actor, and idempotent request hash.
+- Added immutable raw BOQ source rows with sheet/page/row/region provenance, exact raw values, original-text slot, extraction confidence, and warnings.
+- Added deterministic XLSX/XLSM extraction across all worksheets. It retains every non-empty raw row, preserves formulas without evaluating them, and records merged ranges, hidden sheets/rows/columns, workbook dimensions, and formula warnings.
+- Added fail-closed PDF intake: the artifact and source version are preserved, but extraction remains `VERIFICATION_REQUIRED` at zero confidence until a governed text/OCR adapter is selected.
+- Added revision-lineage gates requiring the latest prior BOQ source and an evidence artifact that explicitly supersedes the prior artifact. Re-import never mutates a prior source or authorized schedule.
+- Added role-scoped create/list/detail APIs, audit provenance, idempotent replay and mismatch handling, migration `0016_boq_source_versions`, and append-only PostgreSQL triggers for both source versions and raw rows.
+
+Verification evidence:
+
+- Full Python/API suite passed: **85 tests**, including multi-sheet extraction, raw formula preservation, merged/hidden structure warnings, content-hash lineage, idempotent replay/mismatch, sequential revisions, and fail-closed PDF intake.
+- Generated-contract freshness, Ruff lint/format, Python compilation, ESLint, strict TypeScript, and the Next.js production build passed.
+- Live PostgreSQL `0015_learning_records → 0016_boq_source_versions → 0015_learning_records → 0016_boq_source_versions` migration rehearsal passed.
+- Both append-only triggers were present after re-upgrade. Direct update probes against a source version and raw source row were rejected, and rollback left no probe records.
+- Alembic offline PostgreSQL SQL generation passed through `0016_boq_source_versions`.
+
+Boundary: this slice preserves and extracts raw source structure; it does not normalize commercial fields, classify schedule relevance, generate WBS/work packages or activities, calculate a schedule, or authorize any planning state. Those begin in B0.2.
+
+### B0.2 — BOQ normalization and row classification
+
+Status: **complete**.
+
+Delivered:
+
+- Added immutable normalization runs linked to one exact B0.1 source version, with normalizer version, detected/explicit header rows, canonical column mappings, warnings, counts, actor, and idempotent request hash.
+- Added immutable canonical BOQ lines for every extracted raw row, preserving stable line identity, exact source location/row, original row text, normalized values, unmapped values, and raw-source lineage.
+- Normalized item number, division, source WBS, item name, description, unit, quantity, unit/total price, currency, location, trade, package, notes, and parent section without modifying raw source values.
+- Added deterministic header detection using controlled aliases plus explicit one-based per-sheet mapping overrides for irregular spreadsheets. Unknown mappings and all unmapped cells remain visible.
+- Implemented all ten BOQ row classes with stored classification basis, planning confidence, review state, validation warnings, and an explicit schedule-relevance flag.
+- Enforced the BS-001 boundary: title/section headers, repeated headers, subtotals/totals, provisional allowances, material-only lines, and unknown rows are preserved but cannot be treated as direct schedulable scope.
+- Numeric formulas are never evaluated as authoritative values; invalid/formula quantities or prices remain null with visible verification warnings. Ambiguous rows remain `UNKNOWN_REVIEW_REQUIRED` and `REVIEW_REQUIRED`.
+- Added role-scoped normalization create/detail APIs, audit provenance, idempotent replay/mismatch rejection, migration `0017_boq_normalization`, and append-only PostgreSQL protection for normalization runs and canonical lines.
+
+Verification evidence:
+
+- Focused BOQ API coverage passed across all ten row classes, multi-sheet header detection, canonical fields, formula warnings, stable raw lineage, unmapped preservation, schedule-relevance gates, idempotent replay, and mismatch rejection.
+- Full repository gate passed: generated contracts, **85 Python/API tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+- Live PostgreSQL `0016_boq_source_versions → 0017_boq_normalization → 0016_boq_source_versions → 0017_boq_normalization` migration rehearsal passed.
+- Both B0.2 append-only triggers were present after re-upgrade. Direct update probes against a normalization run and canonical line were rejected, and rollback left no probe records.
+- Alembic offline PostgreSQL SQL generation passed through `0017_boq_normalization`.
+
+Boundary: B0.2 classifies proposed planning scope but does not create a WBS, work package, activity, duration, dependency, schedule calculation, or authorized planning state. B0.3 begins proposed WBS/work-package formation.
+
+### B0.3 — Proposed WBS and work-package formation
+
+Status: **complete**.
+
+Delivered:
+
+- Added deterministic proposed planning structures with project-root WBS nodes, preserved source-WBS codes, controlled grouping dimensions, work packages, exact BOQ-line mappings, visibly unmapped rows, assumptions, warnings, and change summaries.
+- Every schedule-relevant normalized line maps to exactly one proposed work package in the initial version. Non-schedulable and unknown classes remain present with explicit unmapped reasons rather than disappearing or becoming activities.
+- Missing WBS dimensions fall back to the project node only through a visible low-confidence review assumption; the engine does not fabricate location, trade, crew, responsibility, or construction-system data.
+- Added immutable successor versions for planner package split, package merge, line remap, proposal acceptance, and proposal rejection. Each stores actor, reason, action, exact predecessor, affected IDs, and idempotent request hash.
+- Added latest-version enforcement so stale planning structures cannot be revised. Planner acceptance produces `REVIEWED`, never an authorized schedule or baseline.
+- Added schema version `1.3.0` planning-structure status/action taxonomies, role-scoped create/list/revision APIs, audit provenance, migration `0018_boq_planning_structure`, and append-only PostgreSQL protection.
+
+Verification evidence:
+
+- Focused API coverage passed for generated mapping/unmapped completeness, non-authorization, idempotent replay, two-way split, stale-version denial, merge, line remap, acceptance, rejection, and complete immutable version history.
+- Full repository gate passed: generated contracts, **85 Python/API tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+- Live PostgreSQL `0017_boq_normalization → 0018_boq_planning_structure → 0017_boq_normalization → 0018_boq_planning_structure` migration rehearsal passed.
+- The planning-structure append-only trigger was present after re-upgrade. A direct update was rejected and the rollback-safe probe left no record.
+- Alembic offline PostgreSQL SQL generation passed through `0018_boq_planning_structure`.
+
+Boundary: B0.3 creates reviewable planning structure only. It does not generate schedule activities, durations, productivity assumptions, dependencies, CPM results, or any authorized schedule state. B0.4 begins activity and duration generation.
+
+### B0.4 — Activity, duration, productivity, and assumptions
+
+Status: **complete**.
+
+Delivered:
+
+- Added immutable schedule-draft generations bound to the exact latest planner-reviewed B0.3 structure. Proposed or stale structure versions fail closed.
+- Generated activities by work package and required archetype, not by BOQ row. Direct execution creates `EXECUTION`; procurement scope creates `SUBMITTAL`, `PROCUREMENT`, and `DELIVERY`; testing, approval, and preliminaries use their bounded archetypes.
+- Preserved every activity's WBS/work-package and one-or-many BOQ-line references. Empty packages are skipped with warnings rather than producing untraceable tasks.
+- Implemented the duration hierarchy available in this slice: explicit reviewed project duration first, compatible quantity plus supplied productivity second, otherwise unresolved. Calculations retain exact unrounded duration and deterministic ceiling to whole working days.
+- Stored full productivity provenance including rate/unit, source type/reference/date/version, applicability, confidence, and review state. Company benchmarks, controlled libraries, and explicit assumptions create visible first-class planning assumptions rather than project facts.
+- Added first-class assumptions with proposition, reason, affected activities, source basis, confidence, consequence if wrong, validation owner, status, and resolution slot.
+- Mixed/missing quantity units never aggregate silently. No crew count, shift factor, efficiency factor, overtime, duration, calendar, or date is invented.
+- Added duration/productivity taxonomies in schema version `1.4.0`, role-scoped generate/detail APIs, audit provenance, migration `0019_schedule_draft_generation`, and append-only protection for generations, activities, and assumptions.
+
+Verification evidence:
+
+- BS-002 coverage proves two concrete BOQ rows become one traceable execution activity: 200 m³ divided by an explicit project rate of 50 m³/working day retains an unrounded four-day calculation and deterministic four-day duration.
+- BS-005 coverage proves five unsupported activity durations remain null/`VERIFICATION_REQUIRED` with five open validation assumptions; no high-confidence duration is fabricated.
+- Focused coverage also verifies procurement archetypes, skipped empty packages, exact BOQ references, reviewed/latest structure gates, idempotent replay, and draft-level verification state.
+- Full repository gate passed: generated contracts, **85 Python/API tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+- Live PostgreSQL `0018_boq_planning_structure → 0019_schedule_draft_generation → 0018_boq_planning_structure → 0019_schedule_draft_generation` migration rehearsal passed.
+- All three B0.4 append-only triggers were present after re-upgrade. Direct update probes for a generation, activity, and assumption were rejected; rollback left no probe data.
+- Alembic offline PostgreSQL SQL generation passed through `0019_schedule_draft_generation`.
+
+Boundary: B0.4 creates proposed activities and duration evidence only. It does not generate dependencies, calendars, milestones, dates, float, CPM results, or an authorized schedule. B0.5 begins dependency, milestone, constraint, and calendar proposals.
+
+### B0.5 — Dependencies, milestones, calendars, and constraints
+
+Status: **complete**.
+
+Delivered:
+
+- Added one immutable schedule-logic proposal per exact B0.4 draft generation, retaining typed dependencies, signed lag, derivation basis, confidence, review state, milestones, constraints, calendar, sequence templates, assumptions, warnings, actor, and idempotent request hash.
+- Added deterministic procurement prerequisites from `SUBMITTAL` to `PROCUREMENT` to `DELIVERY`, plus explicit imported relationships and configurable validated sequence templates. Duplicate, self-referential, and unknown-activity relationships fail closed.
+- Added proposed milestones with source provenance and proposed constraints with affected activities. Contract evidence remains evidence only: all milestones and constraints are explicitly `PROPOSED` and unauthorized.
+- Required either a supplied reviewed working calendar or a visible low-confidence Monday–Friday/eight-hour assumption requiring planner review. No dates are calculated in this slice.
+- Added dependency-basis and milestone-source taxonomies in schema version `1.5.0`, role-scoped create/detail APIs, audit provenance, migration `0020_schedule_logic`, and append-only PostgreSQL protection.
+
+Verification evidence:
+
+- Focused API coverage passed for reviewed six-day calendars, explicit approval-release prerequisites, validated sequence templates, deterministic procurement chains, proposed contract milestones and constraints, idempotent replay, and exact retrieval.
+- Full repository gate passed: generated contracts, **85 Python/API tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
+- Live PostgreSQL `0019_schedule_draft_generation → 0020_schedule_logic → 0019_schedule_draft_generation → 0020_schedule_logic` migration rehearsal passed.
+- The B0.5 append-only trigger was present after re-upgrade.
+- Alembic offline PostgreSQL SQL generation passed through `0020_schedule_logic`.
+
+Boundary: B0.5 creates proposed schedule logic and calendar evidence only. It does not calculate dates, float, criticality, deadline variance, or an authorized schedule. B0.6 begins deterministic CPM and validation.
+
+### B0.6 — Deterministic CPM and validation continuation
+
+Status: **technical path verified; operator acceptance pending**.
+
+Migration `0021_bootstrap_cpm` stores immutable input-bound calculations. CPM calculates relationship-specific float and negative float; rejects empty schedules, fractional lags/durations, excessive horizons, incomplete BOQ coverage, duplicate scheduling, missing procurement prerequisites, weak critical inputs, material milestone feeder omissions, and conflicting date constraints. Planner review is blocked when material validation findings remain. Focused cycle, constraint, finish-to-start, start-to-start, negative-float, fractional-lag/duration, weak-input, and missing-prerequisite tests passed.
+
+### B0.7 — Planner review and governed publication continuation
+
+Status: **technical path verified; operator acceptance pending**.
+
+Migration `0022_bootstrap_release` stores immutable planner review and separate authorized release versions. Repeat authorization of one reviewed release is rejected, and approval requires the exact active human grant. JSON/CSV/XLSX exports distinguish proposal from authority and retain BOQ/activity traceability. The `/bootstrap` page exposes the twelve BOQ-first stages, uploads BOQ files directly, carries created IDs forward, displays package/activity/assumption and validation details, provides simple planner name/owner edits and a separate admin grant form, and downloads authenticated exports. It still requires technical JSON input for durations and logic; representative human usability acceptance remains outstanding.
+
+### B0.8 — Revision delta and conformity continuation
+
+Status: **technical path verified; operator acceptance pending**.
+
+Migration `0023_bootstrap_revision_delta` stores immutable scope/mapping/activity comparisons and proposed CPM finish deltas when both versions have calculations. Duplicate BOQ line occurrences remain distinct. Missing downstream drafts are explicitly `PENDING_REGENERATION`. A supplied prior release must be authorized and derive from the predecessor BOQ; the existing current-authorized context is untouched until a separate reviewed revision is approved. A realistic XLSX integration test passed upload through normalization, two-to-one BOQ/activity mapping, project-productivity duration, reviewed calendar, CPM, planner review, active-grant authorization, and revision isolation.
+
+Combined verification on 2026-09-16: the full repository gate passed—generated contracts, **95 Python/API tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and production build. Live PostgreSQL `0020 → 0023 → 0020 → 0023` migration rehearsal passed, and all three append-only triggers were present after re-upgrade. The local API and web server started successfully after correcting the `make api` target to use the locked Uvicorn dependency; `/health` and `/bootstrap` returned successful responses.
+
+Remaining acceptance: run the BS-001–BS-010 conformity checkpoint and representative human operator sessions in the actual browser, including technical-input usability and revision schedule-effect interpretation. Do not mark B0.6–B0.8 or Phase 12 complete from API automation alone.
 
 ## Completed phases
 
@@ -479,6 +630,30 @@ Export fidelity and usability-readiness slice:
 - Added `docs/15-operator-usability-protocol.md` with participant requirements, six time-boxed core tasks, accessibility/export checks, semantic hard failures, acceptance evidence, and a clear separation between automated workflow evidence and representative human observation.
 - Full repository gate passed again on 2026-09-15: generated contracts, **83 tests**, Ruff lint/format, ESLint, Python compilation, strict TypeScript, and the Next.js production build.
 
+Dashboard shell redesign (2026-09-16):
+
+- Replaced the link-heavy landing page with a responsive white-and-burgundy command-center presentation containing operational metrics, an accessible plan-versus-actual SVG trend, priority distribution, recent signals, and control-health indicators.
+- Added a persistent grouped left navigation rail, active-route treatment, compact project/top status bars, and a mobile drawer across every web route. The existing workbenches and governance semantics remain intact.
+- Kept priority, signal category, project health, and authority messaging visibly distinct; dashboard indicators include an explicit notice that they are not human decisions or execution authority.
+- ESLint and standalone strict TypeScript passed. The Next.js production compiler completed, then the build stopped in Next.js 16.3.4 while parsing TypeScript's valid `--showConfig` JSON; this toolchain failure remains unresolved and is not recorded as a passing production build. Browser review also remains pending because the sandbox denied binding the local development server to port 3000.
+
+Single-input planning workspace and progress workbook (2026-09-16):
+
+- Reworked the simple `/bootstrap` route into a project-first workspace. An operator loads and selects a governed project, after which code, timezone, currency, delivery model, and reporting cadence populate from the project record rather than being re-entered.
+- The earlier browser IndexedDB workflow-template cache has been removed. The application now owns the standard six-column workbook projection on the API server, consistently across projects and clients.
+- BOQ scope is matched to the workflow where supported. Unmatched commercial lines remain visibly listed in `BOQ Review` for consolidated work-package planning; they are not copied one-for-one into a second, unlinked pseudo-schedule.
+- Generated XLSX files now contain `Progress Report`, organized by BOQ subdivision with task and proposed planning fields plus constrained operator inputs for work-complete percentage, reporting date, remarks, evidence reference, and responsible party. The sheet states that entered progress remains reported information until supported and verified.
+- A review of `ms_project_schedule_from_boq (1).xlsx` found that an incompatible 38-activity workflow had been followed by 418 paraphrased BOQ-line tasks, most with one-to-three-day generic durations and no dates or logic. That generation path was removed. Generated outputs can no longer be recursively reused as templates, and weak BOQ/template coverage now fails with an actionable error instead of presenting an incomplete programme as valid.
+- Focused workbook tests, Ruff lint/format, ESLint, and strict TypeScript pass after the correction. Producing a complete project timeframe still requires compatible package/activity coverage plus reviewed productivity, logic, calendar, and project date constraints; the converter does not invent those inputs.
+
+OpenAI six-column schedule generation correction (2026-09-16):
+
+- Confirmed that the supplied `Template.xlsx` is an output-format template: its authoritative content is the empty `Tasks` sheet with `ID`, `Name`, `Duration`, `Start`, `Finish`, and `Dependency`. Stale generated `BOQ Review` and `Progress Report` sheets are ignored and removed from output.
+- Added a local-development OpenAI Responses API schedule generator. It sends normalized measured BOQ scope plus project start and optional required completion date, requests strict JSON-schema output, and directs the model to produce consolidated executable subdivisions rather than paraphrased BOQ lines.
+- Added deterministic validation for consecutive IDs, unique task names, ISO dates, start/finish bounds, target completion, and predecessor-only dependencies before any XLSX is returned.
+- API credentials are accepted only from server configuration as `VAI_OPENAI_API_KEY`; the model is configurable with `VAI_OPENAI_SCHEDULE_MODEL` and defaults to `gpt-5`. A future credential-management UI must be admin-only and is not part of the customer workspace.
+- The final workbook contains one `Tasks` sheet and exactly the six requested columns. Five focused spreadsheet tests, Ruff, ESLint, and strict TypeScript pass. A live OpenAI call was not made because no API key was supplied in this checkout.
+
 Local operator distribution:
 
 - Added reproducible container images for the FastAPI service and Next.js application plus `compose.installer.yml` for PostgreSQL, automatic Alembic migrations, API health gating, web startup, and persistent database/evidence volumes.
@@ -496,11 +671,14 @@ The canonical roadmap contains 15 phases (`0` through `14`). Phases `0` through 
 ## Continuity handoff
 
 - Repository-level working agreements and invariants are recorded in `AGENTS.md`; a fresh Codex session should load that file before acting.
-- Resume with B0.1 in `docs/17-boq-to-schedule-bootstrap.md`. Preserve the already-built downstream runtime and make the authorized bootstrap output compatible with its current schedule-context contract.
+- Resume B0.6–B0.8 acceptance hardening in `docs/17-boq-to-schedule-bootstrap.md`. Preserve the immutable B0.1–B0.5 source, normalization, structure, activity, duration, assumption, and schedule-logic boundaries.
 - After B0.1–B0.8, conduct and document amended representative human sessions covering BOQ upload through schedule authorization and the existing Decision Center workflow. Do not mark Phase 12 complete from automated checks alone.
-- The current checkpoint includes migrations through `0015_learning_records`. Do not recreate completed Phase 10 orchestration or Phase 11 governance/response lifecycle records.
+- The current working-tree checkpoint includes migrations through `0023_bootstrap_revision_delta`; the live database was rehearsed to that revision. Do not recreate completed Phase 10 orchestration, Phase 11 governance/response lifecycle, or B0.1–B0.5 bootstrap records.
 - On a fresh machine or account, inspect `git status` and recent history, install locked dependencies if needed, and treat verification recorded below as historical until rerun locally.
 
 ## Next implementation order
 
-Implement B0.1 — bootstrap contracts and immutable BOQ source preservation — followed by B0.2–B0.8 in `docs/17-boq-to-schedule-bootstrap.md`. Then extend and run the Phase 12 operator protocol across the BOQ-first workflow. Production OIDC, object storage, malware scanning, and production OCR selections remain explicit external-integration limitations.
+Finish the outstanding B0.6 validation and regression matrix, harden B0.7 browser review/edit usability, and complete B0.8 conformity and schedule-effect checks. Then extend and run the Phase 12 operator protocol across the BOQ-first workflow. Production OIDC, object storage, malware scanning, and production OCR selections remain explicit external-integration limitations.
+# Direct BOQ-to-MS-Project workbook handoff (2026-09-16)
+
+The simple `/bootstrap` screen now accepts a text-native BOQ PDF and the user's six-column XLSX example, returning an MS Project import workbook. The prior governed workbench is preserved at `/bootstrap/advanced`. The stateless converter copies example timing/logic as draft planning inputs, renumbers/remaps predecessor IDs, places BOQ scope not confidently matched into unscheduled Tasks rows, and records source matching in `BOQ Review`. It does not authorize or publish a schedule. The local sample `BOQ 2.pdf` plus `ms_project_schedule_import.xlsx` produced 867 task rows (561 reference tasks plus 306 unscheduled BOQ rows) from 431 parsed BOQ items. PDF parsing is text-native only; verify BOQ completeness and planner timing before relying on the schedule. Current-check results must be recorded separately; this is not Phase 12 human operator acceptance.

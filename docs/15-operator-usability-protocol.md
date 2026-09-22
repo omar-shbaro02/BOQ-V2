@@ -16,6 +16,36 @@ substitute for an observed session with a representative operator.
   intervention, harmless delay, weak evidence, cost/progress divergence, and authorized change.
 - Record browser, viewport, assistive technology if used, project timezone, participant role, and
   test-data version. Do not use live confidential project data.
+- Start the amended session with a non-confidential XLSX BOQ containing direct execution,
+  procurement, material-only, provisional, summary, and ambiguous rows; include two direct rows
+  that belong to one work package. Prepare a superseding BOQ revision with added and changed scope.
+
+## BOQ-first bootstrap tasks (Amendment A)
+
+Run these before the Decision Center tasks below. The project-controls practitioner operates the
+planner stages; the Project Delivery Manager performs the authority and release stages.
+
+1. In ten minutes, upload the workbook at `/bootstrap`, inspect the immutable source version,
+   normalize it, and explain why summary, material-only, provisional, and ambiguous rows were not
+   silently scheduled.
+2. In ten minutes, review proposed packages and the two-to-one BOQ/activity trace, supply a
+   defensible productivity or explicit duration basis, and identify every unresolved assumption.
+3. In ten minutes, propose dependencies, milestones, and a reviewed working calendar; calculate
+   CPM and explain the proposed finish, float, critical activities, deadline variance, and any
+   blocker. An intentionally conflicting deadline must not become approval-ready.
+4. In ten minutes, submit planner review, attempt publication without the matching active grant
+   (expect denial), then use the separate authorized human route to publish and export JSON, CSV,
+   and XLSX. Verify that the authorized schedule is the current control context and that export
+   notices distinguish proposals from authority.
+5. In five minutes, upload the superseding BOQ, review added/removed/changed scope and available
+   mapping/activity/schedule effects, and show that the current authorized schedule remains
+   unchanged until a newly reviewed version is separately approved.
+
+Record each task's time, errors, facilitator prompts, source and schedule version IDs, export
+hashes, grant scope, and the participant's explanation of each semantic boundary. Any invented
+duration, unreviewed calendar presented as fact, blocker bypass, authority bypass, or revision
+that silently changes the current schedule is a hard failure. Both participants must complete the
+stages appropriate to their role without a hard failure before Amendment A operator acceptance.
 
 ## Time-boxed tasks
 

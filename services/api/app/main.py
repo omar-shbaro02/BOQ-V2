@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.generated import taxonomies
+from app.routers.bootstrap import router as bootstrap_router
 from app.routers.cases import router as cases_router
 from app.routers.control_context import router as control_context_router
 from app.routers.cost import router as cost_router
@@ -11,6 +12,7 @@ from app.routers.evidence import router as evidence_router
 from app.routers.forecast import router as forecast_router
 from app.routers.governance import router as governance_router
 from app.routers.impact import router as impact_router
+from app.routers.ms_project import router as ms_project_router
 from app.routers.orchestration import router as orchestration_router
 from app.routers.progress import router as progress_router
 from app.routers.schedule import router as schedule_router
@@ -37,6 +39,8 @@ app.add_middleware(
 )
 app.include_router(control_context_router)
 app.include_router(evidence_router)
+app.include_router(bootstrap_router)
+app.include_router(ms_project_router)
 app.include_router(signals_router)
 app.include_router(cases_router)
 app.include_router(progress_router)
@@ -76,6 +80,23 @@ def get_taxonomies() -> dict[str, object]:
         "ResponseExecutionStatus",
         "OutcomeClassification",
         "LearningCategory",
+        "BoqExtractionStatus",
+        "BoqRowClass",
+        "ScheduleActivityArchetype",
+        "PlanningConfidence",
+        "PlanningAssumptionStatus",
+        "ScheduleDraftState",
+        "PlanningReviewState",
+        "PlanningStructureStatus",
+        "PlanningStructureAction",
+        "DurationStatus",
+        "DurationBasis",
+        "ProductivitySourceType",
+        "DependencyBasis",
+        "MilestoneSourceType",
+        "BootstrapReadiness",
+        "BootstrapValidationSeverity",
+        "BootstrapExportFormat",
         "ProjectRole",
         "ControlledObjectRelationType",
         "AuthorizedContextType",

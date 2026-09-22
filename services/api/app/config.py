@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,10 @@ class Settings(BaseSettings):
     evidence_storage_backend: str = "local"
     evidence_storage_path: Path = Path(".data/evidence")
     max_upload_bytes: int = 25 * 1024 * 1024
+    openai_api_key: SecretStr | None = None
+    openai_schedule_model: str = "gpt-5"
+    openai_agents_enabled: bool = True
+    openai_agent_model: str = "gpt-5"
 
 
 @lru_cache

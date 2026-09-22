@@ -53,6 +53,8 @@ make up
 
 Run the applications in separate terminals with `make api` and `make web`. Stop local infrastructure with `make down`. Docker users can pass `COMPOSE="docker compose"` to the infrastructure targets.
 
+For a direct MS Project import workbook, open `/bootstrap` and upload a text-native BOQ PDF plus an XLSX example with `ID, Name, Duration, Start, Finish, Dependency` columns. The downloaded workbook keeps that Tasks layout and adds a BOQ Review sheet. Existing example dates, durations, and dependencies are reused only as draft inputs; unmatched BOQ scope is included as unscheduled rows, never assigned invented timing. Map `Dependency` to MS Project's `Predecessors` field when importing. The converter requires `pdftotext` (Poppler); the API container installs it. Scanned PDFs need OCR before conversion. The advanced governed planning workbench remains at `/bootstrap/advanced` and its publication authority boundary is unchanged.
+
 After creating a development organization/project at `/setup`, open `/evidence` to connect that project, upload governed source artifacts, record typed reported claims, inspect the evidence ledger, and create separate human verification results. Local artifact storage and the development malware gate deliberately fail closed outside development/test until production adapters are configured.
 
 Open `/signals` to run versioned deterministic detectors, screen candidates with explicit reason codes, and review correlation suggestions. Signals remain separate from Decision Cases; no case is opened, linked, or grouped until a reviewer accepts the visible correlation rationale.
@@ -62,6 +64,8 @@ Open `/cases` after accepting a correlation to assemble case evidence, freeze im
 Open `/progress` to normalize evidence-backed planned, reported, executed, verified, and accepted/released measurements without collapsing their semantics. Progress evaluation remains inside `/cases`, where compatible bases can be compared against the frozen authorized plan with visible threshold, productivity, trend, persistence, truth, confidence, and formula lineage.
 
 Open `/schedule` to inspect the current authorized network, calendars, constraints, dependency logic, milestones, float, and schedule-quality policies. Schedule assessment remains inside `/cases`, where delay evidence is traced through the exact frozen authorized version and unsupported downstream conclusions stop at local timing variance.
+
+The simple `/bootstrap` workspace can generate a proposed six-column MS Project schedule directly from a text-native BOQ by using the OpenAI Responses API. The OpenAI credential is server-only through `VAI_OPENAI_API_KEY`; it is never accepted from the customer browser. Use `VAI_OPENAI_SCHEDULE_MODEL` to override the default model. VAI owns and creates the standardized workbook, so clients upload only their BOQ rather than an Excel template. The exported workbook contains only `ID`, `Name`, `Duration`, `Start`, `Finish`, and `Dependency`. Model output is JSON-schema constrained and locally validated, but remains a planner-review proposal rather than an authorized baseline.
 
 Open `/cost` to inspect the effective authorized budget, normalize evidence-backed commitments, actuals, accruals, BOQ value, earned value, and physical value by reporting period, and review the visible cost policy. Cost assessment remains inside `/cases`, where only compatible currency, scope, period, and basis are reconciled; timing, procurement, prepayment, retention, and mobilization explanations never assert contractual liability.
 
@@ -80,6 +84,8 @@ Open `/impact` to load a Decision Case, select snapshot-bound progress/schedule/
 ### Specialist orchestration (Phase 10)
 
 The orchestration API creates immutable, idempotent runs bound to one case snapshot and records all five bounded specialist contracts. It assembles deterministic disposition candidates and a structured case brief, stops safely when impact evidence is missing or restricted, and always routes authority to human review. Recommendation output cannot record a human decision, authorize a response, alter a baseline/budget, or commit spend or contractual positions.
+
+When `VAI_OPENAI_API_KEY` is configured and `VAI_OPENAI_AGENTS_ENABLED=true`, all five specialist contracts run through bounded OpenAI agents before deterministic recommendation assembly. Each agent uses its versioned JSON prompt under `services/api/app/agent_prompts`, strict structured output, the exact selected snapshot input, and an evidence-reference allowlist. The agent model is configured with `VAI_OPENAI_AGENT_MODEL`. Without a key, the existing deterministic specialist projection remains available; invalid or failed agent output is persisted as a specialist failure and cannot silently strengthen readiness or authority.
 
 Open `/orchestration` to select case-bound specialist results, run or retry deterministic coordination on an immutable snapshot, and inspect specialist status, contradiction stops, disposition alternatives, blockers, and the structured case brief.
 

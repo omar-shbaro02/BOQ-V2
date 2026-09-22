@@ -15,13 +15,19 @@ def test_taxonomies_are_published() -> None:
     response = client.get("/api/v1/meta/taxonomies")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "1.1.0"
+    assert payload["schema_version"] == "1.8.0"
     assert payload["taxonomies"]["Disposition"] == [
         "NO_ACTION",
         "MONITOR",
         "VERIFY",
         "INTERVENE",
         "ESCALATE",
+    ]
+    assert payload["taxonomies"]["BoqExtractionStatus"] == [
+        "RECEIVED",
+        "EXTRACTED",
+        "VERIFICATION_REQUIRED",
+        "FAILED",
     ]
 
 
