@@ -15,6 +15,7 @@ from app.services.ms_project_export import (
     parse_boq_items,
 )
 from app.services.openai_schedule import build_openai_schedule_workbook, create_openai_schedule
+from app.services.schedule_change_assistant import revise_schedule
 
 router = APIRouter(prefix="/api/v1/ms-project", tags=["ms-project"])
 MAX_UPLOAD = 20 * 1024 * 1024
@@ -66,6 +67,48 @@ async def generate_ai_schedule(
             "X-VAI-Task-Count": str(len(tasks)),
             "X-VAI-Model": settings.openai_schedule_model,
             "Access-Control-Expose-Headers": "X-VAI-Task-Count, X-VAI-Model",
+        },
+    )
+
+
+@router.post("/revise-with-ai")
+async def revise_with_ai(
+    schedule: Annotated[UploadFile, File()],
+    change_request: Annotated[str, Form(min_length=10, max_length=8000)],
+) -> StreamingResponse:
+    settings = get_settings()
+    if settings.environment not in {"development", "test"}:
+        raise HTTPException(status_code=403, detail="Local schedule assistant is unavailable")
+    if not schedule.filename or not schedule.filename.lower().endswith(".xlsx"):
+        raise HTTPException(
+            status_code=422, detail="Schedule must be an XLSX MS Project import workbook"
+        )
+    content = await schedule.read(MAX_UPLOAD + 1)
+    if len(content) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="Schedule must be 20 MB or smaller")
+    configured_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+    key = (configured_key or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=503,
+            detail="AI scheduling is not configured. Contact the system administrator.",
+        )
+    try:
+        proposal = await revise_schedule(
+            content=content,
+            request=change_request,
+            api_key=key,
+            model=settings.openai_schedule_assistant_model,
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return StreamingResponse(
+        io.BytesIO(proposal),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="proposed_schedule_change.zip"',
+            "X-VAI-Model": settings.openai_schedule_assistant_model,
+            "Access-Control-Expose-Headers": "X-VAI-Model",
         },
     )
 

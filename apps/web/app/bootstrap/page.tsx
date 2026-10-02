@@ -63,7 +63,7 @@ export default function BootstrapPage() {
         </form>
         {error?<p className="form-message error" role="alert">{error}</p>:null}{message?<p className="form-message success" role="status">{message}</p>:null}
       </section>
-      <aside className="workbench-card workspace-side"><span className="section-kicker">Built-in output contract</span><h2>Exactly six columns</h2><p>VAI creates the standardized workbook on the server. Clients only provide their project data.</p><div className="boundary-list"><Boundary icon="1" title="ID & subdivision" text="Consolidated work packages, not paraphrased BOQ lines"/><Boundary icon="2" title="Duration & dates" text="Working-day duration with start and finish dates"/><Boundary icon="3" title="Dependency" text="Earlier predecessor IDs in MS Project import format"/></div><Link href="/bootstrap/advanced" className="quiet-link">Open governed review workflow →</Link></aside>
+      <aside className="workbench-card workspace-side"><span className="section-kicker">Built-in output contract</span><h2>Exactly six columns</h2><p>VAI creates the standardized workbook on the server. Clients only provide their project data.</p><div className="boundary-list"><Boundary icon="1" title="ID & subdivision" text="Consolidated work packages, not paraphrased BOQ lines"/><Boundary icon="2" title="Duration & dates" text="Working-day duration with start and finish dates"/><Boundary icon="3" title="Dependency" text="Earlier predecessor IDs in MS Project import format"/></div><Link href="/bootstrap/schedule-assistant" className="quiet-link">Open schedule-change assistant →</Link><Link href="/bootstrap/advanced" className="quiet-link">Open governed review workflow →</Link></aside>
     </div>
   </main>;
 }

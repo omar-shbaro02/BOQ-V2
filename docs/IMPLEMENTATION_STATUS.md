@@ -1,6 +1,55 @@
 # Implementation Status
 
-Last updated: 2026-09-21
+Last updated: 2026-10-02
+
+## AI schedule-change assistant guardrail hardening (2026-10-02)
+
+Prompt contract `1.1.0` now treats both the uploaded workbook and user message as untrusted data,
+requires a structured feasibility outcome (`FEASIBLE`, `CONDITIONAL`, or
+`NOT_FEASIBLE_WITH_GIVEN_EVIDENCE`), and requires explicit evidence gaps. It prohibits fabricated
+crews, productivity, access, permits, calendars, approvals, funding, entitlement, or scope, and
+instructs the model to preserve facts when it cannot support a change. The generated report and
+manifest record prompt version and source-workbook SHA-256. A simplified operator/product guide is
+available at `docs/18-schedule-change-assistant.md`.
+
+## AI schedule-change proposal assistant (2026-10-02)
+
+Added `/bootstrap/schedule-assistant` as the BOQ-to-Schedule sub-navigation for a server-only
+GPT-5.6 Sol schedule-change assistant. An operator uploads a VAI six-column MS Project import XLSX
+and describes a desired delay, deadline compression, resequencing, duration, or dependency change.
+The assistant returns a ZIP containing a proposed re-import XLSX, an actionable Word report, and a
+JSON manifest. The report identifies the changed tasks, construction strategy, assumptions, risks,
+constraints, and planner actions before re-import and recalculation in Microsoft Project.
+
+The model receives a strict full-schedule JSON contract and is prompted as a construction planner
+across work fronts, trade sequence, procurement, approvals, inspections, cure times, testing,
+commissioning, and practical parallelization. Server validation preserves every original task ID
+and name, restricts edits to duration/dates/predecessors, rejects invalid dates, unknown/self
+dependencies, and dependency cycles. The output is deliberately a proposal only: it cannot approve,
+baseline, or change an existing authorized schedule. Configuration is server-only through
+`VAI_OPENAI_API_KEY` and `VAI_OPENAI_SCHEDULE_ASSISTANT_MODEL` (default `gpt-5.6-sol`).
+
+Focused service tests passed (**3 tests**) for the import contract, task-identity preservation,
+cycle rejection, and valid Word-package generation. Python compilation and whitespace checks also
+passed. Ruff and the web TypeScript/build checks remain unavailable because the current local dev
+toolchain is incomplete; this and representative planner verification remain required before
+acceptance.
+
+## Bootstrap planner-review usability continuation (2026-10-02)
+
+The governed `/bootstrap/advanced` planner-review stage no longer requires an operator to author
+raw edit JSON for normal material corrections. It now lets a planner stage, inspect, replace, and
+remove multiple activity-name or responsible-owner edits before submitting the immutable review.
+Each staged edit retains the current displayed original value, required reason, and API-approved
+field path; duration and logic remain deliberately routed through a new reviewed draft and CPM
+calculation. The server still performs its authoritative original-value check and records actor and
+timestamp in append-only release history.
+
+Focused CPM/release integration coverage passed (**2 tests**) on 2026-10-02. Web typecheck, lint,
+and build could not run in this checkout because its Node dependency installation is incomplete
+(`node_modules/.bin/tsc` is absent); an attempted `npm ci --ignore-scripts` did not finish within
+the local command window. This is verification debt, not evidence of a completed operator-acceptance
+gate.
 
 ## OpenAI specialist-agent automation continuation (2026-09-21)
 

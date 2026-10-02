@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     openai_schedule_model: str = "gpt-5"
     openai_agents_enabled: bool = True
     openai_agent_model: str = "gpt-5"
+    openai_schedule_assistant_model: str = "gpt-5.6-sol"
 
 
 @lru_cache
