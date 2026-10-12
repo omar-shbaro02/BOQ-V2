@@ -5,7 +5,30 @@ containers. It is intended for Phase 12 usability testing and demonstrations on 
 It is not a production package: production identity, object storage, malware scanning, TLS, secret
 management, backup, and recovery adapters remain deliberately fail-closed or unconfigured.
 
+## Portable Windows package (no prerequisite installs)
+
+The preferred QA handoff is `vai-local-evaluation-windows-portable.zip`. It contains the compiled
+application, Python runtime and locked API dependencies, Node.js runtime, PostgreSQL server,
+database migrations, and Poppler PDF tools. QA does not need to install Docker, Python, Node.js,
+PostgreSQL, or npm and does not need administrator access.
+
+1. Extract the complete archive to a normal local folder.
+2. Double-click `Start VAI.cmd`.
+3. Use the application at `http://localhost:3000`.
+4. Double-click `Stop VAI.cmd` before moving or deleting the folder.
+
+Database, evidence, state, and logs remain within the extracted directory. The package is currently
+for 64-bit Windows 10/11. Do not run it from inside the ZIP or expose its local ports to an
+untrusted network.
+
+Release engineers build this artifact on Windows with:
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_portable.ps1`
+
 ## Windows 10/11
+
+The Docker-based archive below remains available for engineering environments, but is not the
+zero-prerequisite QA package.
 
 From a Windows source checkout, create both evaluation archives with:
 

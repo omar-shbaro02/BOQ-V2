@@ -2,6 +2,20 @@
 
 Last updated: 2026-10-12
 
+## Zero-prerequisite portable Windows QA package (2026-10-12)
+
+Added a 64-bit Windows portable distribution that embeds the compiled standalone web application,
+Node.js runtime, Python runtime with locked API dependencies, PostgreSQL server and migrations, and
+Poppler PDF tools. QA can extract the archive and use `Start VAI.cmd` / `Stop VAI.cmd`; Docker,
+Python, Node.js, PostgreSQL, npm, administrator installation, and system services are not required.
+Database, evidence, process state, and logs remain within the extracted directory.
+
+An extracted-package smoke test initialized a new bundled PostgreSQL cluster, migrated it through
+`0023_bootstrap_revision_delta`, returned HTTP 200 from the API and standalone web application,
+verified the bundled `pdftotext` runtime, stopped cleanly, restarted against preserved data, and
+stopped cleanly again. This remains a trusted local evaluation package rather than a production
+deployment, and it does not replace the outstanding Phase 12 representative human sessions.
+
 ## Windows evaluation release readiness (2026-10-12)
 
 Added a native PowerShell packaging path for Windows checkouts, with reproducible Windows and
