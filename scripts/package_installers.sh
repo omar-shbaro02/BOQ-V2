@@ -15,6 +15,8 @@ tar \
   --exclude=dist \
   --exclude=.data \
   --exclude=.pytest_cache \
+  --exclude=.ruff_cache \
+  --exclude=__pycache__ \
   -C "$ROOT_DIR" -cf - . | tar -C "$STAGING_DIR/vai-local-evaluation" -xf -
 
 chmod +x "$STAGING_DIR/vai-local-evaluation/install-linux.sh"
@@ -23,7 +25,13 @@ tar -C "$STAGING_DIR" -czf "$OUTPUT_DIR/vai-local-evaluation-linux.tar.gz" vai-l
   cd "$STAGING_DIR"
   zip -qr "$OUTPUT_DIR/vai-local-evaluation-windows.zip" vai-local-evaluation
 )
+(
+  cd "$OUTPUT_DIR"
+  sha256sum vai-local-evaluation-linux.tar.gz vai-local-evaluation-windows.zip \
+    > SHA256SUMS.txt
+)
 
 echo "Created:"
 echo "  $OUTPUT_DIR/vai-local-evaluation-linux.tar.gz"
 echo "  $OUTPUT_DIR/vai-local-evaluation-windows.zip"
+echo "  $OUTPUT_DIR/SHA256SUMS.txt"

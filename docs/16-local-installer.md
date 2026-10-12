@@ -7,6 +7,12 @@ management, backup, and recovery adapters remain deliberately fail-closed or unc
 
 ## Windows 10/11
 
+From a Windows source checkout, create both evaluation archives with:
+
+`powershell -ExecutionPolicy Bypass -File .\scripts\package_installers.ps1`
+
+The archives and `SHA256SUMS.txt` are written to `dist\installers`.
+
 1. Install and start Docker Desktop with Linux containers enabled.
 2. Extract the VAI Windows archive to a normal local folder.
 3. Right-click `install-windows.ps1` and run it with PowerShell, or execute:

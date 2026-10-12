@@ -15,8 +15,7 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 WORKDIR /opt/vai
-COPY --from=builder /opt/vai/package.json /opt/vai/package-lock.json ./
-COPY --from=builder /opt/vai/node_modules node_modules
-COPY --from=builder /opt/vai/apps/web apps/web
+COPY --from=builder /opt/vai/apps/web/.next/standalone ./
+COPY --from=builder /opt/vai/apps/web/.next/static ./apps/web/.next/static
 EXPOSE 3000
-CMD ["npm", "run", "start", "--workspace", "@vai/web"]
+CMD ["node", "apps/web/server.js"]

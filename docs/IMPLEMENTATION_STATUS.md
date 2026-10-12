@@ -1,6 +1,24 @@
 # Implementation Status
 
-Last updated: 2026-10-02
+Last updated: 2026-10-12
+
+## Windows evaluation release readiness (2026-10-12)
+
+Added a native PowerShell packaging path for Windows checkouts, with reproducible Windows and
+Linux evaluation archives plus SHA-256 checksums. The web runtime now uses the traced Next.js
+standalone server, and production web dependencies were updated to Next.js 16.4.0 with no known
+production npm audit findings. GitHub Actions now installs Python dependencies into an isolated
+environment instead of the runner's protected system Python and performs a full installer Compose
+smoke test after the API and web gates pass.
+
+Fresh Windows verification passed generated-contract checks, Ruff lint/format, Python compilation,
+all **106 tests**, ESLint, strict TypeScript, the Next.js production build, and native HTTP smoke
+checks for the API health endpoint and built standalone web server. Both installer archives and
+their checksum manifest were generated and inspected. Docker Desktop was not installed on this
+workstation, so the containerized migration/runtime path remains assigned to the new Linux CI
+installer smoke job before publishing the evaluation release. This release-readiness work is
+automated technical evidence only and does not complete the outstanding Phase 12 human operator
+protocol.
 
 ## AI schedule-change assistant guardrail hardening (2026-10-02)
 

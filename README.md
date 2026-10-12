@@ -106,3 +106,5 @@ Reports include deterministic content hashes and semantic fidelity manifests. Th
 ### Local Windows and Linux installers
 
 Run `make package-installers` to produce shareable Windows and Linux evaluation archives under `dist/installers`. The Windows launcher requires Docker Desktop; the Linux launcher supports Docker Compose or Podman Compose. Both start the web UI, API, PostgreSQL, automatic migrations, and persistent local evidence storage. See `docs/16-local-installer.md` for installation, stop/reset, security-boundary, and port details.
+
+On Windows, use `powershell -ExecutionPolicy Bypass -File .\scripts\package_installers.ps1` when GNU Make and a POSIX shell are not installed.
