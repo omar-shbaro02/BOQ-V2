@@ -46,6 +46,6 @@ jobs:
       - run: curl --fail --show-error http://localhost:8000/health
       - run: curl --fail --show-error http://localhost:3000/
       - run: sh scripts/package_installers.sh
-      - run: sha256sum --check dist/installers/SHA256SUMS.txt
+      - run: cd dist/installers && sha256sum --check SHA256SUMS.txt
       - if: always()
         run: docker compose -f compose.installer.yml down --volumes

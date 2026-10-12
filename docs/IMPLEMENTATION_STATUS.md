@@ -15,8 +15,9 @@ Fresh Windows verification passed generated-contract checks, Ruff lint/format, P
 all **106 tests**, ESLint, strict TypeScript, the Next.js production build, and native HTTP smoke
 checks for the API health endpoint and built standalone web server. Both installer archives and
 their checksum manifest were generated and inspected. Docker Desktop was not installed on this
-workstation, so the containerized migration/runtime path remains assigned to the new Linux CI
-installer smoke job before publishing the evaluation release. This release-readiness work is
+workstation; the Linux CI installer smoke job built both images, migrated a fresh PostgreSQL
+database, received successful API and web responses, built both distribution archives, and checked
+their hashes. This release-readiness work is
 automated technical evidence only and does not complete the outstanding Phase 12 human operator
 protocol.
 
