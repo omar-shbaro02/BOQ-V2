@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { ProjectContextFields } from "../project-context-fields";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 type Connection = { actorId: string; organizationId: string; projectId: string; caseId: string };
@@ -99,14 +100,13 @@ export function ImpactWorkbench() {
     } catch (error) { setMessage(String(error)); } finally { setBusy(false); }
   }
   return <div className="workbench-grid">
-    <section className="workbench-card full-width"><h2>Case context</h2><form className="inline-form" onSubmit={connect}>
-      <label>Actor ID<input name="actorId" defaultValue="local-admin" required /></label>
-      <label>Organization UUID<input name="organizationId" required /></label><label>Project UUID<input name="projectId" required /></label><label>Case UUID<input name="caseId" required /></label>
+    <section className="workbench-card full-width"><h2>Choose case</h2><form className="inline-form context-form" onSubmit={connect}>
+      <ProjectContextFields includeCase />
       <button disabled={busy}>Load case</button>
     </form></section>
     {connection && <section className="workbench-card full-width"><h2>Create assessment</h2><p>Case version {version}. Select at least one specialist result from the same snapshot and controlled object. Clock durations are explicit planning inputs in calendar days.</p>
       <form className="inline-form" onSubmit={assess}>
-        <label>Snapshot UUID<input name="snapshot_id" required /></label><label>Controlled object UUID<input name="controlled_object_id" required /></label>
+        <label>Snapshot reference<input name="snapshot_id" required /></label><label>Controlled object reference<input name="controlled_object_id" required /></label>
         <label>Schedule assessment<select name="schedule_assessment_id"><option value="">None</option>{scheduleResults.map(item => <option key={item.id} value={item.id}>#{item.assessment_number} · {item.assessment_status} · snapshot {item.snapshot_id}</option>)}</select></label>
         <label>Cost assessment<select name="cost_assessment_id"><option value="">None</option>{costResults.map(item => <option key={item.id} value={item.id}>#{item.assessment_number} · {item.assessment_status} · snapshot {item.snapshot_id}</option>)}</select></label>
         <label>Progress evaluation<select name="progress_evaluation_id"><option value="">None</option>{progressResults.map(item => <option key={item.id} value={item.id}>#{item.evaluation_number} · {item.reconciliation_status} · snapshot {item.snapshot_id}</option>)}</select></label>
@@ -120,7 +120,7 @@ export function ImpactWorkbench() {
     </section>}
     {connection && <section className="workbench-card full-width"><h2>Confidence override</h2><p>Use only for an explicit reviewer-approved exception. The selected assessment must use the same snapshot and computed upstream ceiling.</p>
       <form className="inline-form" onSubmit={approveOverride}>
-        <label>Snapshot UUID<input name="snapshot_id" required /></label>
+        <label>Snapshot reference<input name="snapshot_id" required /></label>
         <label>Computed upstream ceiling<input name="upstream_ceiling" type="number" min="0" max="1" step="0.001" required /></label>
         <label>Approved confidence<input name="approved_confidence" type="number" min="0" max="1" step="0.001" required /></label>
         <label>Justification (20+ characters)<input name="justification" minLength={20} required /></label>

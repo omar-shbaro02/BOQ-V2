@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { ProjectContextFields } from "../project-context-fields";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -185,19 +186,8 @@ export function EvidenceWorkbench() {
             {connection ? "Connected" : "Required"}
           </span>
         </div>
-        <form className="inline-form" onSubmit={connect}>
-          <label>
-            Actor ID
-            <input name="actorId" defaultValue="local-admin" required />
-          </label>
-          <label>
-            Organization UUID
-            <input name="organizationId" required />
-          </label>
-          <label>
-            Project UUID
-            <input name="projectId" required />
-          </label>
+        <form className="inline-form context-form" onSubmit={connect}>
+          <ProjectContextFields />
           <button type="submit">Connect</button>
           <button type="button" className="secondary" disabled={!connection || busy} onClick={() => refresh()}>
             Refresh evidence
@@ -226,7 +216,7 @@ export function EvidenceWorkbench() {
           <label>Field name<input name="fieldName" placeholder="installed_quantity" required /></label>
           <label>Value<input name="value" placeholder="0" required /></label>
           <label>As of<input name="asOf" type="datetime-local" required /></label>
-          <label>Controlled object UUID<input name="controlledObjectId" /></label>
+          <label>Controlled object reference<input name="controlledObjectId" /></label>
           <label>Artifact<select name="artifactId" defaultValue=""><option value="">No artifact link</option>{artifacts.map((artifact) => <option value={artifact.id} key={artifact.id}>{artifact.original_filename}</option>)}</select></label>
           <div className="form-pair"><label>Unit<input name="unit" placeholder="m³" /></label><label>Confidence<input name="confidence" type="number" min="0" max="1" step="0.01" defaultValue="0.5" required /></label></div>
           <label>Measurement basis<input name="measurementBasis" placeholder="PHYSICAL_VERIFIED" /></label>

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { ProjectContextFields } from "../project-context-fields";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -113,11 +114,9 @@ export function ProgressWorkbench() {
     <div className="workbench-grid">
       <section className="workbench-card full-width">
         <span className="step-number">01</span>
-        <h2>Project context</h2>
-        <form className="inline-form" onSubmit={connect}>
-          <label>Actor ID<input name="actorId" defaultValue="local-admin" required /></label>
-          <label>Organization UUID<input name="organizationId" required /></label>
-          <label>Project UUID<input name="projectId" required /></label>
+        <h2>Choose project</h2>
+        <form className="inline-form context-form" onSubmit={connect}>
+          <ProjectContextFields />
           <button>Load progress</button>
           <button type="button" className="secondary" disabled={!connection || busy} onClick={() => refresh()}>Refresh</button>
         </form>
@@ -127,9 +126,9 @@ export function ProgressWorkbench() {
         <h2>Normalize evidence</h2>
         <p className="card-copy">The numerator must match an immutable evidence value. Planned values additionally require an exact point in the linked authorized schedule.</p>
         <form className="stack-form" onSubmit={normalize}>
-          <label>Evidence UUID<input name="evidenceId" required /></label>
+          <label>Evidence record<input name="evidenceId" required /></label>
           <label>Progress gate<select name="kind"><option>PLANNED_AUTHORIZED</option><option>REPORTED</option><option>EXECUTED</option><option>VERIFIED</option><option>ACCEPTED_RELEASED</option></select></label>
-          <label>Authorized schedule UUID<input name="authorizedContextId" placeholder="Required only for planned progress" /></label>
+          <label>Authorized schedule reference<input name="authorizedContextId" placeholder="Required only for planned progress" /></label>
           <div className="form-pair"><label>Numerator<input name="numerator" type="number" min="0" step="any" required /></label><label>Denominator<input name="denominator" type="number" min="0.000001" step="any" required /></label></div>
           <label>Unit<input name="unit" defaultValue="%" required /></label>
           <button disabled={!connection || busy}>Record normalized measurement</button>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
+import { ProjectContextFields } from "../project-context-fields";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -44,7 +45,6 @@ type ReviewQueues = Record<ReviewQueueName, ReviewEntry[]> & { project_timezone:
 const reviewQueueNames: ReviewQueueName[] = ["verification", "human_review", "approval", "escalation", "governance_blocks", "overdue_evidence", "expiring_forecasts"];
 
 export function DecisionCenter() {
-  const savedContext = savedJson<Connection>("vai-decision-center-context");
   const [connection, setConnection] = useState<Connection | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [reviewQueues, setReviewQueues] = useState<ReviewQueues | null>(null);
@@ -140,11 +140,9 @@ export function DecisionCenter() {
     <div className="decision-center-grid">
       <section className="workbench-card full-width" aria-labelledby="center-context">
         <span className="step-number">01</span>
-        <h2 id="center-context">Project context</h2>
-        <form className="center-connect" onSubmit={connect}>
-          <label>Actor ID<input name="actorId" defaultValue={savedContext?.actorId ?? "local-admin"} required /></label>
-          <label>Organization UUID<input name="organizationId" defaultValue={savedContext?.organizationId} required /></label>
-          <label>Project UUID<input name="projectId" defaultValue={savedContext?.projectId} required /></label>
+        <h2 id="center-context">Choose project</h2>
+        <form className="center-connect context-form" onSubmit={connect}>
+          <ProjectContextFields />
           <button disabled={busy}>Load governed queue</button>
         </form>
       </section>
@@ -217,12 +215,6 @@ function formatProjectTime(value: string | null, timezone = "UTC"): string {
 
 function savedValue(key: string, fallback: string): string {
   return typeof window === "undefined" ? fallback : window.sessionStorage.getItem(key) ?? fallback;
-}
-
-function savedJson<T>(key: string): T | null {
-  if (typeof window === "undefined") return null;
-  try { return JSON.parse(window.sessionStorage.getItem(key) ?? "null") as T | null; }
-  catch { return null; }
 }
 
 function download(blob: Blob, filename: string) {

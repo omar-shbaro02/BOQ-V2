@@ -172,7 +172,11 @@ def parse_boq_items(text: str) -> list[BoqItem]:
                 )
             )
     if not items:
-        raise ValueError("No measurable BOQ item rows could be extracted from this PDF")
+        raise ValueError(
+            "This PDF does not contain recognizable BOQ item rows with item numbers, "
+            "units, and quantities. Check that you selected the actual BOQ rather than "
+            "a presentation, report, or scanned PDF."
+        )
     return items
 
 

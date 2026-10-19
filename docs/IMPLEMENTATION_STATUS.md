@@ -2,6 +2,21 @@
 
 Last updated: 2026-10-12
 
+## BOQ workspace usability refresh (2026-10-12)
+
+Reworked the simple `/bootstrap` workflow into one balanced, responsive surface instead of an
+uneven main-card/sidebar layout. Project connection, BOQ upload, dates, the fixed output contract,
+and the generation action now follow one clear sequence with consistent control sizing, improved
+disabled guidance, selected-file feedback, and compact links to the assistant and governed flow.
+Project creation is now a dedicated `Projects` navigation destination. In local-evaluation mode,
+the UI manages the development actor and organization UUID internally after first-project setup;
+operators see workspace and project names rather than technical identifiers. The BOQ workspace
+loads the saved project context automatically and routes an empty installation to project creation.
+Desktop and narrow-width rendered-page checks passed. The full repository gate also passed:
+generated contracts, all Python/API tests, Ruff lint/format, Python compilation, ESLint, strict
+TypeScript, and the Next.js production build. This remains technical usability evidence and does
+not replace the outstanding representative Phase 12 operator sessions.
+
 ## Zero-prerequisite portable Windows QA package (2026-10-12)
 
 Added a 64-bit Windows portable distribution that embeds the compiled standalone web application,
@@ -764,3 +779,26 @@ Finish the outstanding B0.6 validation and regression matrix, harden B0.7 browse
 # Direct BOQ-to-MS-Project workbook handoff (2026-09-16)
 
 The simple `/bootstrap` screen now accepts a text-native BOQ PDF and the user's six-column XLSX example, returning an MS Project import workbook. The prior governed workbench is preserved at `/bootstrap/advanced`. The stateless converter copies example timing/logic as draft planning inputs, renumbers/remaps predecessor IDs, places BOQ scope not confidently matched into unscheduled Tasks rows, and records source matching in `BOQ Review`. It does not authorize or publish a schedule. The local sample `BOQ 2.pdf` plus `ms_project_schedule_import.xlsx` produced 867 task rows (561 reference tasks plus 306 unscheduled BOQ rows) from 431 parsed BOQ items. PDF parsing is text-native only; verify BOQ completeness and planner timing before relying on the schedule. Current-check results must be recorded separately; this is not Phase 12 human operator acceptance.
+
+## Windows local-development and BOQ scheduling verification (2026-10-12)
+
+- Added root `npm run dev` orchestration for the bundled Windows PostgreSQL and Poppler runtimes, migrations, API, and Next.js development server so local testing no longer depends on separately configured processes.
+- Exercised the real 75-page `BOQ 2.pdf`: 431 measurable rows were parsed and the live OpenAI path returned a 57-task workbook with exactly the six contracted columns, sequential IDs, complete names/dates, valid predecessor-only dependencies, and a final task on the requested 2027-12-12 completion date.
+- Confirmed that the similarly named `Vai - BOQ 2.pdf` is a project-control presentation rather than a BOQ. Non-BOQ text now returns an actionable selection/scanning error; the focused workbook/parser suite passes (7 tests).
+- Rendered all 15 application routes at desktop and narrow viewport sizes and confirmed HTTP 200 responses. Corrected narrow-screen context-input/button overflow. The governed workbenches still expose technical actor, organization, project, and case identifiers; replacing those with the local project picker remains outstanding usability work.
+- Current verification: generated-contract check, Ruff check/format, ESLint, strict TypeScript, and the Next.js production build (17 static pages) pass. The full API suite has one pre-existing governance/orchestration mismatch: `test_orchestration_assembles_supported_disposition_and_specialist_boundaries` receives `STOPPED` where the test expects `LIMITED`; this is not recorded as a passing full gate.
+
+## Operator context simplification (2026-10-12)
+
+- Removed manual Actor, Organization, Project, and Decision Case identifier entry from every operator workbench. The local account and organization remain internal request context; operators now choose projects by code/name and decision cases by case number/title.
+- Added one reusable context selector shared by Decision Center, Evidence, Signals, Cases, Progress, Schedule, Cost, Forecast, Impact, Orchestration, and the advanced BOQ workflow. The selector uses the workspace created in Projects and retains the active project locally.
+- Removed UUID terminology from operator-facing form labels; technical record identifiers remain internal API values and are submitted behind readable selections where those projections exist.
+- Current web verification passes: ESLint, strict TypeScript, a 17-page production build, rendered desktop checks for project/case selectors, and HTTP 200 checks across all affected routes.
+
+## Persistent BOQ and schedule handoff (2026-10-13)
+
+- The simple BOQ workspace now preserves the uploaded PDF and generated XLSX as project-scoped evidence artifacts. PostgreSQL retains their immutable metadata and the configured evidence store retains their bytes; production storage continues to fail closed without an external adapter.
+- Added a visible completion panel with an explicit Excel download button, proposal/review notice, and three concrete next steps. Automatic one-shot browser download is no longer the only way to obtain the workbook.
+- Added a project-file library to `/bootstrap`, reachable from the command center through **BOQ files & schedules**. Operators can download prior BOQs and generated workbooks again after refresh or in a later session.
+- Verified the existing `BOQ 2.pdf` and generated six-column XLSX through storage/download round trips; both downloaded SHA-256 hashes matched their source files. The project library returned both entries. ESLint, strict TypeScript, and the 17-page production build pass.
+- Corrected the live generator failure path after reproducing a Responses API call exceeding the former 180-second client timeout. The server now permits five minutes and converts timeout/network failures into readable API errors; the browser clears stale progress, confirms that the BOQ remains saved, and refreshes Project files even when generation fails. A focused timeout regression test, Ruff, ESLint, strict TypeScript, and an origin-aware API error check pass.

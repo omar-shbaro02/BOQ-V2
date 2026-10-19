@@ -5,6 +5,7 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
     "dev:web": "npm run dev --workspace @vai/web",
     "build:web": "npm run build --workspace @vai/web",
     "lint:web": "npm run lint --workspace @vai/web",

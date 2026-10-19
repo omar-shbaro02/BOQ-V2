@@ -90,12 +90,23 @@ async def create_openai_schedule(
         },
         "max_output_tokens": 20000,
     }
-    async with httpx.AsyncClient(timeout=180) as client:
-        response = await client.post(
-            RESPONSES_URL,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json=body,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            response = await client.post(
+                RESPONSES_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=body,
+            )
+    except httpx.TimeoutException as exc:
+        raise ValueError(
+            "Schedule generation took longer than five minutes. The BOQ remains saved; "
+            "try generating it again."
+        ) from exc
+    except httpx.RequestError as exc:
+        raise ValueError(
+            "The scheduling service could not be reached. The BOQ remains saved; "
+            "check the internet connection and try again."
+        ) from exc
     if response.status_code >= 400:
         detail = response.json().get("error", {}).get("message", response.text[:500])
         raise ValueError(f"OpenAI schedule generation failed: {detail}")

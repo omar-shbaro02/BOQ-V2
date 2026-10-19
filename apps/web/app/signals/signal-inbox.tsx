@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { ProjectContextFields } from "../project-context-fields";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -192,10 +193,8 @@ export function SignalInbox() {
           <div><span className="step-number">01</span><h2>Connect and detect</h2></div>
           <span className={connection ? "connection active" : "connection"}>{connection ? "Connected" : "Required"}</span>
         </div>
-        <form className="inline-form signal-connect" onSubmit={connect}>
-          <label>Actor ID<input name="actorId" defaultValue="local-admin" required /></label>
-          <label>Organization UUID<input name="organizationId" required /></label>
-          <label>Project UUID<input name="projectId" required /></label>
+        <form className="inline-form signal-connect context-form" onSubmit={connect}>
+          <ProjectContextFields />
           <button>Connect</button>
           <button type="button" className="secondary" disabled={!connection || busy} onClick={runDetection}>Run detectors</button>
         </form>

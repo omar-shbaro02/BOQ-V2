@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import io
+from datetime import date
 
+import httpx
+import pytest
 from app.services.ms_project_export import HEADERS, build_ms_project_workbook, parse_boq_items
-from app.services.openai_schedule import build_openai_schedule_workbook
+from app.services.openai_schedule import build_openai_schedule_workbook, create_openai_schedule
 from openpyxl import Workbook, load_workbook
 
 
@@ -49,6 +53,18 @@ def test_boq_scope_is_not_duplicated_as_a_second_task_schedule() -> None:
     assert not any(row[2] == "Lay asphalt surface" for row in progress_rows[4:])
     review_rows = list(workbook["BOQ Review"].values)
     assert any(row[0] == "p1:1.2" and row[1] == "Lay asphalt surface" for row in review_rows)
+
+
+def test_non_boq_pdf_text_has_an_actionable_error() -> None:
+    text = "Daily Project Control Assistant\nFrom reporting to decision intelligence\n"
+    try:
+        parse_boq_items(text)
+    except ValueError as exc:
+        message = str(exc)
+        assert "actual BOQ" in message
+        assert "presentation" in message
+    else:
+        raise AssertionError("Non-BOQ content was incorrectly accepted")
 
 
 def test_layout_only_leaves_all_planning_fields_blank() -> None:
@@ -112,6 +128,26 @@ def test_openai_schedule_export_uses_only_six_column_tasks_sheet() -> None:
         (1, "Mobilization", "10 days", "2026-10-01", "2026-10-10", None),
         (2, "Substructure", "30 days", "2026-10-11", "2026-11-09", "1"),
     ]
+
+
+def test_openai_schedule_timeout_returns_an_actionable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def raise_timeout(*_args: object, **_kwargs: object) -> None:
+        request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        raise httpx.ReadTimeout("response exceeded timeout", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", raise_timeout)
+    with pytest.raises(ValueError, match="longer than five minutes.*BOQ remains saved"):
+        asyncio.run(
+            create_openai_schedule(
+                [],
+                api_key="test-key",
+                model="test-model",
+                project_start=date(2026, 10, 13),
+                target_finish=None,
+            )
+        )
 
 
 def test_customer_ai_endpoint_accepts_neither_api_key_nor_template() -> None:
