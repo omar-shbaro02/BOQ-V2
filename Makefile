@@ -1,4 +1,4 @@
-.PHONY: bootstrap generate check-generated test lint typecheck build up down api web package-installers
+.PHONY: bootstrap generate check-generated check-secrets test lint typecheck build up down api web package-installers verify-r10
 
 COMPOSE ?= podman compose
 
@@ -14,6 +14,12 @@ generate:
 
 check-generated:
 	python3 scripts/generate_contracts.py --check
+
+check-secrets:
+	python3 scripts/check_secrets.py
+
+verify-r10:
+	.venv/bin/python scripts/verify_r10.py $(R10_ARGS)
 
 test:
 	.venv/bin/pytest

@@ -1,0 +1,41 @@
+import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+
+test("production build uses verified HttpOnly identity through HTTPS proxy and clears it on sign-out", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("vai-project-workspace", JSON.stringify({ actorId: "forged-admin", organizationId: "00000000-0000-0000-0000-000000000999" }));
+    localStorage.setItem("vai-active-project", "00000000-0000-0000-0000-0000000000ca");
+  });
+  const first = await page.goto("/decision-center");
+  expect(first?.headers()["x-frame-options"]).toBe("DENY");
+  expect(first?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(first?.headers()["content-security-policy"]).not.toContain("localhost:8000");
+  await page.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText("Signed in", { exact: true })).toBeVisible();
+  const cookies = await context.cookies();
+  const session = cookies.find((item) => item.name === "__Host-vai-session");
+  expect(session?.secure).toBe(true); expect(session?.httpOnly).toBe(true); expect(session?.sameSite).toBe("Lax");
+  expect(await page.evaluate(() => document.cookie)).not.toContain("__Host-vai-session");
+  const identity = await page.evaluate(async () => (await fetch("/api/v1/auth/session", { headers: { "X-VAI-Actor-ID": "forged-admin" } })).json());
+  expect(identity.actor_id).toBe("auth0|browser-operator");
+  expect(identity.organization_id).toBe("00000000-0000-0000-0000-0000000000c9");
+  const upload = await context.request.post("/api/v1/fixture/body-size", { headers: { Origin: "https://127.0.0.1:3012" }, data: Buffer.alloc(12 * 1024 * 1024, 1) });
+  expect(upload.status()).toBe(200);
+  expect((await upload.json()).size).toBe(12 * 1024 * 1024);
+  await page.goto("/decision-center");
+  await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveValue("00000000-0000-0000-0000-0000000000ca");
+  await page.getByRole("button", { name: "Load governed queue", exact: true }).click();
+  await expect(page.getByText("Identity fixture case", { exact: false }).first()).toBeVisible();
+  const denied = await context.request.post("/api/v1/auth/logout", { headers: { Origin: "https://evil.example" } });
+  expect(denied.status()).toBe(403);
+  await mkdir(".test-tmp/oidc-qa", { recursive: true });
+  await page.screenshot({ path: ".test-tmp/oidc-qa/signed-in.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".app-sidebar")).not.toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: ".test-tmp/oidc-qa/signed-in-mobile.png", fullPage: true });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+  expect((await context.request.get("/api/v1/auth/session")).status()).toBe(401);
+  expect((await context.cookies()).some((item) => item.name === "__Host-vai-session")).toBe(false);
+});

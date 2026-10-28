@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.8.0",
+  "schema_version": "1.10.0",
   "taxonomies": {
     "SemanticState": [
       "BASELINE",
@@ -355,7 +355,8 @@
       "ANALYST_CONTROLLER",
       "DECISION_OWNER",
       "APPROVER_ESCALATION_AUTHORITY",
-      "AUDITOR_READ_ONLY"
+      "AUDITOR_READ_ONLY",
+      "SYSTEM_SERVICE"
     ],
     "ControlledObjectRelationType": [
       "CONTAINS",
@@ -364,7 +365,13 @@
       "AFFECTS",
       "CROSS_CUTTING"
     ],
-    "AuthorizedContextType": ["SCHEDULE", "BUDGET", "BOQ"],
+    "AuthorizedContextType": ["SCHEDULE", "BUDGET", "BOQ", "PROGRESS_WEIGHTING"],
+    "ProgressWeightingBasis": [
+      "BOQ_VALUE",
+      "COST_VALUE",
+      "QUANTITY",
+      "MANUAL_AUTHORIZED"
+    ],
     "ProjectStatus": ["DRAFT", "ACTIVE", "ARCHIVED"],
     "EvidenceItemStatus": ["ACTIVE", "SUPERSEDED"],
     "EvidenceRelationType": ["SUPPORTS", "CONTRADICTS", "DERIVED_FROM"],

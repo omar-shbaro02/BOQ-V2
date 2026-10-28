@@ -13,6 +13,7 @@ from app.generated.taxonomies import (
     ControlledObjectRelationType,
     ControlledObjectType,
     ProgressBasis,
+    ProgressWeightingBasis,
     ProjectRole,
     ProjectStatus,
     ScheduleConstraintType,
@@ -344,6 +345,29 @@ class BoqPayload(ApiModel):
     items: list[BoqItem] = Field(min_length=1)
 
 
+class ProgressWeightEntry(ApiModel):
+    controlled_object_code: str = Field(min_length=1, max_length=80)
+    weight: Decimal = Field(gt=0, le=1)
+
+
+class ProgressWeightingPayload(ApiModel):
+    data_date: date
+    weighting_basis: ProgressWeightingBasis
+    measurement_basis: ProgressBasis
+    source_reference: str = Field(min_length=3, max_length=300)
+    entries: list[ProgressWeightEntry] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def valid_weights(self) -> ProgressWeightingPayload:
+        codes = [entry.controlled_object_code for entry in self.entries]
+        if len(codes) != len(set(codes)):
+            raise ValueError("Progress weighting controlled object codes must be unique")
+        total = sum((entry.weight for entry in self.entries), Decimal("0"))
+        if total != Decimal("1"):
+            raise ValueError("Progress weights must total exactly 1")
+        return self
+
+
 class ContextVersionBase(ApiModel):
     context_type: AuthorizedContextType
     semantic_state: SemanticState
@@ -367,6 +391,7 @@ class ContextVersionCreate(ContextVersionBase):
             AuthorizedContextType.SCHEDULE: SchedulePayload,
             AuthorizedContextType.BUDGET: BudgetPayload,
             AuthorizedContextType.BOQ: BoqPayload,
+            AuthorizedContextType.PROGRESS_WEIGHTING: ProgressWeightingPayload,
         }
         validated = payload_models[self.context_type].model_validate(self.payload)
         self.payload = validated.model_dump(mode="json")
@@ -389,6 +414,8 @@ class ContextVersionRead(ContextVersionBase):
 
 class ContextActivation(ApiModel):
     source_version_id: uuid.UUID
+    authority_grant_id: uuid.UUID | None = None
+    expected_current_context_id: uuid.UUID | None = None
     approval_reference: str = Field(min_length=3)
     reason: str = Field(min_length=3)
 

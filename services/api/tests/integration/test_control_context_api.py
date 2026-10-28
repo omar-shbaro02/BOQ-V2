@@ -5,6 +5,7 @@ import pytest
 from app.database import Base, get_db
 from app.main import app
 from app.models import AuditEvent, AuthorizedContextVersion
+from context_helpers import activate_with_authority
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -135,7 +136,8 @@ def test_authorized_context_activation_preserves_baseline_and_history(
         },
     )
     assert baseline.status_code == 201, baseline.text
-    activated = client.post(
+    activated = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={
@@ -170,7 +172,8 @@ def test_authorized_context_activation_preserves_baseline_and_history(
             },
         },
     )
-    replacement = client.post(
+    replacement = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={
@@ -239,7 +242,7 @@ def test_analyst_can_propose_but_cannot_activate(api: tuple[TestClient, Any]) ->
     assert proposal.status_code == 201, proposal.text
     denied = client.post(
         f"/api/v1/projects/{project_id}/authorized-context/activate",
-        headers=analyst_headers,
+        headers={**analyst_headers, "Idempotency-Key": "analyst-cannot-activate"},
         json={
             "source_version_id": proposal.json()["id"],
             "approval_reference": "UNAUTHORIZED-001",
@@ -296,6 +299,89 @@ def test_schedule_payload_rejects_unknown_dependency(api: tuple[TestClient, Any]
         },
     )
     assert response.status_code == 422
+
+
+def test_progress_weighting_is_complete_unique_project_scoped_and_authorized(
+    api: tuple[TestClient, Any],
+) -> None:
+    client, _ = api
+    _, project_id, headers = bootstrap_project(client)
+    for code in ("WP-01", "WP-02"):
+        response = client.post(
+            f"/api/v1/projects/{project_id}/controlled-objects",
+            headers=headers,
+            json={"object_type": "WORK_PACKAGE", "code": code, "name": f"Package {code}"},
+        )
+        assert response.status_code == 201, response.text
+
+    def create(entries: list[dict[str, object]]):
+        return client.post(
+            f"/api/v1/projects/{project_id}/authorized-context/versions",
+            headers=headers,
+            json={
+                "context_type": "PROGRESS_WEIGHTING",
+                "semantic_state": "PROPOSED",
+                "effective_from": "2026-10-23T00:00:00Z",
+                "payload": {
+                    "data_date": "2026-10-23",
+                    "weighting_basis": "BOQ_VALUE",
+                    "measurement_basis": "PHYSICAL_EXECUTED",
+                    "source_reference": "Reviewed BOQ allocation V1",
+                    "entries": entries,
+                },
+            },
+        )
+
+    wrong_total = create(
+        [
+            {"controlled_object_code": "WP-01", "weight": "0.60"},
+            {"controlled_object_code": "WP-02", "weight": "0.30"},
+        ]
+    )
+    assert wrong_total.status_code == 422
+
+    duplicate = create(
+        [
+            {"controlled_object_code": "WP-01", "weight": "0.50"},
+            {"controlled_object_code": "WP-01", "weight": "0.50"},
+        ]
+    )
+    assert duplicate.status_code == 422
+
+    unknown = create(
+        [
+            {"controlled_object_code": "WP-01", "weight": "0.50"},
+            {"controlled_object_code": "WP-99", "weight": "0.50"},
+        ]
+    )
+    assert unknown.status_code == 422
+    assert "WP-99" in unknown.json()["detail"]
+
+    proposal = create(
+        [
+            {"controlled_object_code": "WP-01", "weight": "0.60"},
+            {"controlled_object_code": "WP-02", "weight": "0.40"},
+        ]
+    )
+    assert proposal.status_code == 201, proposal.text
+    activation = activate_with_authority(
+        client,
+        f"/api/v1/projects/{project_id}/authorized-context/activate",
+        headers=headers,
+        json={
+            "source_version_id": proposal.json()["id"],
+            "approval_reference": "WEIGHTS-APPROVED-001",
+            "reason": "Approved project completion weighting basis",
+        },
+    )
+    assert activation.status_code == 201, activation.text
+    assert activation.json()["semantic_state"] == "CURRENT_AUTHORIZED"
+    current = client.get(
+        f"/api/v1/projects/{project_id}/authorized-context/current/PROGRESS_WEIGHTING",
+        headers=headers,
+    )
+    assert current.status_code == 200, current.text
+    assert current.json()["id"] == activation.json()["id"]
 
 
 def test_invalid_project_calendar_is_rejected(api: tuple[TestClient, Any]) -> None:

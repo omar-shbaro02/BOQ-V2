@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -150,6 +152,14 @@ class AuthorizedContextVersion(Base):
         UniqueConstraint(
             "project_id", "context_type", "version_number", name="uq_context_project_type_version"
         ),
+        Index(
+            "uq_context_current_authorized",
+            "project_id",
+            "context_type",
+            unique=True,
+            postgresql_where=text("semantic_state = 'CURRENT_AUTHORIZED'"),
+            sqlite_where=text("semantic_state = 'CURRENT_AUTHORIZED'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -174,6 +184,77 @@ class AuthorizedContextVersion(Base):
     activated_by: Mapped[str | None] = mapped_column(String(200))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProjectContextRecord(Base):
+    __tablename__ = "project_context_record"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "record_type",
+            "record_key",
+            "version_number",
+            name="uq_project_context_record_version",
+        ),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_project_context_record_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    record_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    record_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("project_context_record.id", ondelete="RESTRICT")
+    )
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    initial_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    evidence_item_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProjectContextLifecycleEvent(Base):
+    __tablename__ = "project_context_lifecycle_event"
+    __table_args__ = (
+        UniqueConstraint("record_id", "event_number", name="uq_project_context_event_no"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_project_context_event_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    record_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_context_record.id", ondelete="RESTRICT"), index=True
+    )
+    event_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(30))
+    to_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_grant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authority_grant.id", ondelete="RESTRICT")
+    )
+    authorized_context_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT")
+    )
+    actor_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class AuditEvent(Base):
@@ -470,6 +551,7 @@ class ProposedScheduleActivity(Base):
     wbs_node_id: Mapped[str] = mapped_column(String(80), nullable=False)
     work_package_id: Mapped[str] = mapped_column(String(80), nullable=False)
     boq_line_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    boq_allocations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     activity_name: Mapped[str] = mapped_column(String(300), nullable=False)
     activity_type: Mapped[str] = mapped_column(String(40), nullable=False)
     trade: Mapped[str | None] = mapped_column(String(160))
@@ -1418,6 +1500,45 @@ class ProgressThresholdPolicy(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ProgressWorkbookImport(Base):
+    __tablename__ = "progress_workbook_import"
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_progress_workbook_idem"),
+        UniqueConstraint(
+            "project_id",
+            "artifact_id",
+            "schedule_context_id",
+            "data_date",
+            name="uq_progress_workbook_source",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    artifact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("evidence_artifact.id", ondelete="RESTRICT")
+    )
+    schedule_context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT")
+    )
+    data_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rows: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    network_basis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(60), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class ProgressMeasurement(Base):
     __tablename__ = "progress_measurement"
     __table_args__ = (
@@ -1452,6 +1573,187 @@ class ProgressMeasurement(Base):
     confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
     recorded_by: Mapped[str] = mapped_column(String(200), nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ProjectControlSnapshot(Base):
+    __tablename__ = "project_control_snapshot"
+    __table_args__ = (
+        UniqueConstraint("project_id", "snapshot_number", name="uq_project_control_snapshot_no"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_project_control_snapshot_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    snapshot_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    data_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    progress_weighting_context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT"), index=True
+    )
+    schedule_context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("authorized_context_version.id", ondelete="RESTRICT"), index=True
+    )
+    weighting_basis: Mapped[str] = mapped_column(String(40), nullable=False)
+    measurement_basis: Mapped[str] = mapped_column(String(80), nullable=False)
+    package_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    package_exclusions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    cost_assessment_refs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    forecast_projection_refs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    supporting_context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    health: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    policy_versions: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    planned_ratio: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    actual_ratio: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    variance_ratio: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    progress_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    progress_policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    input_evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    truth_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
+    limitations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportSnapshot(Base):
+    __tablename__ = "report_snapshot"
+    __table_args__ = (
+        UniqueConstraint("project_id", "report_number", name="uq_report_snapshot_no"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_report_snapshot_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    project_control_snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_control_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    case_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("decision_case.id", ondelete="RESTRICT"), index=True
+    )
+    report_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    report_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    data_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    source_refs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    policy_versions: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    generator_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    semantic_notice: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    fidelity_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    generated_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PresentationArtifact(Base):
+    __tablename__ = "presentation_artifact"
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_presentation_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    report_snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("report_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    source_report_approval_event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("report_lifecycle_event.id", ondelete="RESTRICT")
+    )
+    source_report_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    generator_version: Mapped[str] = mapped_column(String(60), nullable=False)
+    recipients: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    fidelity_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    generated_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PresentationLifecycleEvent(Base):
+    __tablename__ = "presentation_lifecycle_event"
+    __table_args__ = (
+        UniqueConstraint("presentation_id", "event_number", name="uq_presentation_event_no"),
+        UniqueConstraint("project_id", "idempotency_key", name="uq_presentation_event_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    presentation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("presentation_artifact.id", ondelete="RESTRICT"), index=True
+    )
+    event_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(20))
+    to_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_grant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authority_grant.id", ondelete="RESTRICT")
+    )
+    actor_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReportLifecycleEvent(Base):
+    __tablename__ = "report_lifecycle_event"
+    __table_args__ = (
+        UniqueConstraint("report_snapshot_id", "event_number", name="uq_report_event_no"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id", ondelete="RESTRICT"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project.id", ondelete="RESTRICT"), index=True
+    )
+    report_snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("report_snapshot.id", ondelete="RESTRICT"), index=True
+    )
+    event_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(20))
+    to_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_grant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("authority_grant.id", ondelete="RESTRICT")
+    )
+    actor_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 

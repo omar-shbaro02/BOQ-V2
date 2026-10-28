@@ -23,7 +23,7 @@ def record_audit(
         organization_id=organization_id,
         project_id=project_id,
         actor_id=actor.actor_id,
-        actor_type="HUMAN",
+        actor_type=actor.principal_type,
         action=action,
         object_type=object_type,
         object_id=object_id,

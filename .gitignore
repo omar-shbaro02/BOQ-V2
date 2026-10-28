@@ -5,6 +5,7 @@
 .idea/
 .vscode/
 .pytest_cache/
+.test-tmp/
 .ruff_cache/
 .mypy_cache/
 __pycache__/
@@ -18,5 +19,7 @@ node_modules/
 out/
 coverage/
 htmlcov/
+playwright-report/
+test-results/
 dist/
 *.log

@@ -23,6 +23,7 @@ from app.models import (
     VerificationEvent,
 )
 from app.storage import LocalEvidenceStore, get_evidence_store
+from context_helpers import activate_with_authority
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from sqlalchemy import create_engine, select
@@ -508,6 +509,14 @@ def test_boq_source_preserves_workbook_structure_rows_and_revision_lineage(
     inspection = next(item for item in activities if item["activity_type"] == "INSPECTION_RELEASE")
     testing = next(item for item in activities if item["activity_type"] == "TESTING_COMMISSIONING")
     delivery = next(item for item in activities if item["activity_type"] == "DELIVERY")
+    allocation_roles: dict[str, list[str]] = {}
+    for activity in activities:
+        for allocation in activity["boq_allocations"]:
+            allocation_roles.setdefault(allocation["boq_line_id"], []).append(
+                allocation["activity_role"]
+            )
+    assert all(roles.count("PRIMARY_COUNTING") == 1 for roles in allocation_roles.values())
+    assert any("TRACE_ONLY_NON_COUNTING" in roles for roles in allocation_roles.values())
     logic_url = (
         f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{draft.json()['id']}/logic"
     )
@@ -643,10 +652,16 @@ def test_boq_source_preserves_workbook_structure_rows_and_revision_lineage(
 
 
 @pytest.mark.parametrize(
-    ("relation_type", "expected_finish", "expected_second_float"),
+    ("relation_type", "expected_finish", "expected_second_float", "constraint_type", "holidays"),
     [
-        ("FINISH_TO_START", "2026-10-09", "0"),
-        ("START_TO_START", "2026-10-07", "1"),
+        ("FINISH_TO_START", "2026-10-09", "0", None, []),
+        ("START_TO_START", "2026-10-07", "1", None, []),
+        ("FINISH_TO_FINISH", "2026-10-07", "0", None, []),
+        ("START_TO_FINISH", "2026-10-07", "1", None, []),
+        ("START_TO_START", "2026-10-07", "0", "FINISH_NO_LATER_THAN", []),
+        ("START_TO_START", "2026-10-07", "0", "MUST_FINISH_ON", []),
+        ("START_TO_START", "2026-10-07", "0", "MUST_START_ON", []),
+        ("FINISH_TO_START", "2026-10-12", "0", None, ["2026-10-07"]),
     ],
 )
 def test_bootstrap_cpm_review_authority_and_exports(
@@ -654,6 +669,8 @@ def test_bootstrap_cpm_review_authority_and_exports(
     relation_type: str,
     expected_finish: str,
     expected_second_float: str,
+    constraint_type: str | None,
+    holidays: list[str],
 ) -> None:
     client, sessions = evidence_api
     organization_id, project_id, headers, _ = bootstrap(client)
@@ -692,6 +709,7 @@ def test_bootstrap_cpm_review_authority_and_exports(
                     wbs_node_id="WBS-1",
                     work_package_id=f"WP-{code}",
                     boq_line_refs=[str(uuid.uuid4())],
+                    boq_allocations=[],
                     activity_name=f"Test {code}",
                     activity_type="EXECUTION",
                     description="Traceable execution task",
@@ -726,13 +744,26 @@ def test_bootstrap_cpm_review_authority_and_exports(
                     }
                 ],
                 milestones=[],
-                constraints=[],
+                constraints=(
+                    [
+                        {
+                            "activity_id": str(second_id),
+                            "constraint_type": constraint_type,
+                            "constraint_date": (
+                                "2026-10-05" if constraint_type == "MUST_START_ON" else "2026-10-06"
+                            ),
+                            "source_reference": "Reviewed activity deadline",
+                        }
+                    ]
+                    if constraint_type
+                    else []
+                ),
                 calendar={
                     "calendar_id": "PROJECT",
                     "name": "Reviewed calendar",
                     "working_weekdays": [0, 1, 2, 3, 4],
                     "working_hours_per_day": "8",
-                    "holidays": [],
+                    "holidays": holidays,
                     "shift_pattern": None,
                     "review_state": "ACCEPTED",
                 },
@@ -755,9 +786,14 @@ def test_bootstrap_cpm_review_authority_and_exports(
     assert calculation.status_code == 201, calculation.text
     calculated = calculation.json()
     assert calculated["readiness"] == "PLANNER_REVIEW_REQUIRED"
+    assert calculated["calculation_version"] == "1.1.0"
     assert calculated["proposed_finish"] == expected_finish
     assert calculated["activity_results"][1]["total_float_working_days"] == expected_second_float
     assert calculated["activity_results"][0]["free_float_working_days"] == "0"
+    for result in calculated["activity_results"]:
+        assert (
+            0 <= int(result["free_float_working_days"]) <= int(result["total_float_working_days"])
+        )
     assert calculated["input_hash"]
     replay = client.post(
         f"/api/v1/projects/{project_id}/bootstrap/schedule-drafts/{generation_id}/calculations",
@@ -803,6 +839,27 @@ def test_bootstrap_cpm_review_authority_and_exports(
         },
     )
     assert denied.status_code == 403
+    bounded = client.post(
+        f"/api/v1/projects/{project_id}/authority-grants",
+        headers=headers,
+        json={
+            "actor_id": "evidence-admin@example.test",
+            "authority_type": "CURRENT_SCHEDULE_APPROVAL",
+            "max_amount": "1000",
+            "currency": "USD",
+        },
+    )
+    assert bounded.status_code == 201, bounded.text
+    denied_bounded = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-releases/{review.json()['id']}/approve",
+        headers={**headers, "Idempotency-Key": "approve-bounded"},
+        json={
+            "authority_grant_id": bounded.json()["id"],
+            "approval_reference": "PM-BOUNDED",
+            "reason": "Amount-limited authority cannot approve an entire schedule.",
+        },
+    )
+    assert denied_bounded.status_code == 403, denied_bounded.text
     grant = client.post(
         f"/api/v1/projects/{project_id}/authority-grants",
         headers=headers,
@@ -860,6 +917,55 @@ def test_bootstrap_cpm_review_authority_and_exports(
             assert b"semantic_notice" in exported.content
             assert b"CURRENT_AUTHORIZED" in exported.content
 
+    stale_review = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-calculations/{calculated['id']}/reviews",
+        headers={**headers, "Idempotency-Key": "review-before-context-replacement"},
+        json={"reason": "Planner reviewed the then-current schedule.", "edits": []},
+    )
+    assert stale_review.status_code == 201, stale_review.text
+    assert (
+        stale_review.json()["schedule_payload"]["authorization_predecessor_context_id"]
+        == (approved.json()["authorized_context_id"])
+    )
+    source = client.post(
+        f"/api/v1/projects/{project_id}/authorized-context/versions",
+        headers=headers,
+        json={
+            "context_type": "SCHEDULE",
+            "semantic_state": "PROPOSED",
+            "effective_from": "2026-10-05T00:00:00Z",
+            "payload": current.json()["payload"],
+        },
+    )
+    assert source.status_code == 201, source.text
+    replacement = activate_with_authority(
+        client,
+        f"/api/v1/projects/{project_id}/authorized-context/activate",
+        headers=headers,
+        json={
+            "source_version_id": source.json()["id"],
+            "approval_reference": "PM-CONTEXT-REPLACEMENT",
+            "reason": "Explicitly replace the authorized schedule.",
+        },
+    )
+    assert replacement.status_code == 201, replacement.text
+    stale = client.post(
+        f"/api/v1/projects/{project_id}/bootstrap/schedule-releases/{stale_review.json()['id']}/approve",
+        headers={**headers, "Idempotency-Key": "approve-stale-review"},
+        json={
+            "authority_grant_id": grant.json()["id"],
+            "approval_reference": "PM-STALE",
+            "reason": "A stale planner review must require fresh review.",
+        },
+    )
+    assert stale.status_code == 409, stale.text
+    assert (
+        client.get(
+            f"/api/v1/projects/{project_id}/authorized-context/current/SCHEDULE", headers=headers
+        ).json()["id"]
+        == replacement.json()["id"]
+    )
+
 
 @pytest.mark.parametrize(
     ("conflict_mode", "expected_finding"),
@@ -867,10 +973,18 @@ def test_bootstrap_cpm_review_authority_and_exports(
         ("cycle", "DEPENDENCY_CYCLE"),
         ("constraint", "CONSTRAINT_CONFLICT"),
         ("milestone", "NEGATIVE_FLOAT"),
+        ("prior_milestone", "NEGATIVE_FLOAT"),
         ("invalid_lag", "INVALID_LAG"),
         ("invalid_duration", "INVALID_DURATION"),
         ("weak_critical", "WEAK_CRITICAL_ASSUMPTION"),
         ("missing_prerequisite", "MISSING_PREREQUISITE"),
+        ("missing_duration", "MISSING_DURATION"),
+        ("calendar", "CALENDAR_REVIEW_REQUIRED"),
+        ("missing_trace", "MISSING_SOURCE_TRACEABILITY"),
+        ("duplicate", "DUPLICATE_SCHEDULING"),
+        ("empty", "EMPTY_SCHEDULE"),
+        ("missing_feeder", "MILESTONE_FEEDER_MISSING"),
+        ("horizon", "SCHEDULE_HORIZON_EXCEEDED"),
     ],
 )
 def test_bootstrap_dependency_cycle_blocks_review(
@@ -901,7 +1015,7 @@ def test_bootstrap_dependency_cycle_blocks_review(
                 created_by="evidence-admin@example.test",
             )
         )
-        for index, activity_id in enumerate(ids):
+        for index, activity_id in enumerate(ids if conflict_mode != "empty" else []):
             session.add(
                 ProposedScheduleActivity(
                     id=activity_id,
@@ -910,8 +1024,13 @@ def test_bootstrap_dependency_cycle_blocks_review(
                     generation_id=generation_id,
                     activity_code=f"CYCLE-{index}",
                     wbs_node_id="WBS",
-                    work_package_id="WP",
-                    boq_line_refs=[str(uuid.uuid4())],
+                    work_package_id=(
+                        "WP"
+                        if conflict_mode in {"missing_prerequisite", "duplicate"}
+                        else f"WP-{index}"
+                    ),
+                    boq_line_refs=[] if conflict_mode == "missing_trace" else [str(uuid.uuid4())],
+                    boq_allocations=[],
                     activity_name=f"Cycle {index}",
                     activity_type=(
                         ("SUBMITTAL", "PROCUREMENT")[index]
@@ -919,8 +1038,16 @@ def test_bootstrap_dependency_cycle_blocks_review(
                         else "EXECUTION"
                     ),
                     description="Cycle test",
-                    duration_working_days=Decimal(
-                        "1.5" if conflict_mode == "invalid_duration" and index == 1 else "1"
+                    duration_working_days=(
+                        None
+                        if conflict_mode == "missing_duration"
+                        else Decimal(
+                            "1.5"
+                            if conflict_mode == "invalid_duration" and index == 1
+                            else "3000"
+                            if conflict_mode == "horizon"
+                            else "1"
+                        )
                     ),
                     duration_unrounded=Decimal(
                         "1.5" if conflict_mode == "invalid_duration" and index == 1 else "1"
@@ -948,7 +1075,7 @@ def test_bootstrap_dependency_cycle_blocks_review(
                 2
                 if conflict_mode == "cycle"
                 else 0
-                if conflict_mode == "missing_prerequisite"
+                if conflict_mode in {"missing_prerequisite", "empty"}
                 else 1
             )
         ]
@@ -965,16 +1092,20 @@ def test_bootstrap_dependency_cycle_blocks_review(
                         {
                             "code": "MS-EARLY",
                             "name": "Required early completion",
-                            "target_date": "2026-10-05",
+                            "target_date": (
+                                "2026-10-01" if conflict_mode == "prior_milestone" else "2026-10-05"
+                            ),
                             "source_type": "CONTRACT_EVIDENCE",
                             "source_reference": "test milestone",
-                            "feeds_from_activity_ids": [str(ids[1])],
+                            "feeds_from_activity_ids": (
+                                [] if conflict_mode == "missing_feeder" else [str(ids[1])]
+                            ),
                             "material": True,
                             "status": "PROPOSED",
                             "authorized": False,
                         }
                     ]
-                    if conflict_mode == "milestone"
+                    if conflict_mode in {"milestone", "prior_milestone", "missing_feeder"}
                     else []
                 ),
                 constraints=(
@@ -995,7 +1126,9 @@ def test_bootstrap_dependency_cycle_blocks_review(
                     "working_weekdays": [0, 1, 2, 3, 4],
                     "working_hours_per_day": "8",
                     "holidays": [],
-                    "review_state": "ACCEPTED",
+                    "review_state": "REVIEW_REQUIRED"
+                    if conflict_mode == "calendar"
+                    else "ACCEPTED",
                 },
                 sequence_templates=[],
                 assumptions=[],
@@ -1017,6 +1150,10 @@ def test_bootstrap_dependency_cycle_blocks_review(
     assert any(
         item["code"] == expected_finding for item in calculation.json()["validation_findings"]
     )
+    if conflict_mode == "prior_milestone":
+        results = calculation.json()["activity_results"]
+        assert [item["total_float_working_days"] for item in results] == ["-3", "-3"]
+        assert results[1]["late_finish"] == "2026-10-01"
     review = client.post(
         f"/api/v1/projects/{project_id}/bootstrap/schedule-calculations/{calculation.json()['id']}/reviews",
         headers={**headers, "Idempotency-Key": "review-cycle"},
@@ -1028,8 +1165,8 @@ def test_bootstrap_dependency_cycle_blocks_review(
 def test_bootstrap_real_xlsx_to_authorized_schedule_and_revision_isolation(
     evidence_api: tuple[TestClient, sessionmaker[Session]],
 ) -> None:
-    client, _ = evidence_api
-    _, project_id, headers, _ = bootstrap(client)
+    client, sessions = evidence_api
+    organization_id, project_id, headers, _ = bootstrap(client)
     prefix = f"/api/v1/projects/{project_id}"
     workbook = Workbook()
     sheet = workbook.active
@@ -1068,6 +1205,12 @@ def test_bootstrap_real_xlsx_to_authorized_schedule_and_revision_isolation(
     )
     assert structure.status_code == 201, structure.text
     assert len(structure.json()["line_mappings"]) == 2
+    assert all(
+        item["allocation_basis"] == "FULL_LINE_PRIMARY_COUNTING"
+        and item["allocation_percent"] == "1"
+        and item["primary_counting"] is True
+        for item in structure.json()["line_mappings"]
+    )
     package_id = structure.json()["work_packages"][0]["id"]
     reviewed_structure = client.post(
         f"{prefix}/bootstrap/planning-structures/{structure.json()['id']}/revisions",
@@ -1261,6 +1404,144 @@ def test_artifact_type_and_malware_gates_reject_before_storage(
     assert eicar.status_code == 422
     with sessions() as session:
         assert session.scalar(select(EvidenceArtifact.id)) is None
+
+
+def test_boq_commercial_arithmetic_and_duplicate_findings_are_visible(
+    evidence_api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, sessions = evidence_api
+    organization_id, project_id, headers, _ = bootstrap(client)
+    prefix = f"/api/v1/projects/{project_id}"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Commercial"
+    sheet.append(["Item", "Description", "Quantity", "Unit", "Rate", "Amount", "Currency"])
+    sheet.append(["C-01", "Concrete", 10, "m3", 20, 250, "USD"])
+    sheet.append(["C-01", "Concrete", 10, "m3", 20, 250, "USD"])
+    sheet.append(["C-02", "Invalid credit", -2, "m3", 20, -40, "EUR"])
+    sheet.append([None, "Grand total", None, None, None, 999, "USD"])
+    content = BytesIO()
+    workbook.save(content)
+    artifact = client.post(
+        f"{prefix}/evidence/artifacts",
+        headers=headers,
+        data={"source_type": "BOQ", "source_id": "commercial-integrity"},
+        files={
+            "upload": (
+                "commercial.xlsx",
+                content.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    source = client.post(
+        f"{prefix}/bootstrap/boq-sources",
+        headers={**headers, "Idempotency-Key": "commercial-source"},
+        json={"artifact_id": artifact.json()["id"]},
+    )
+    normalized = client.post(
+        f"{prefix}/bootstrap/boq-sources/{source.json()['id']}/normalizations",
+        headers={**headers, "Idempotency-Key": "commercial-normalization"},
+        json={"amount_tolerance": "0.01"},
+    )
+    assert normalized.status_code == 201, normalized.text
+    detail = client.get(
+        f"{prefix}/bootstrap/boq-sources/{source.json()['id']}/normalization",
+        headers=headers,
+    )
+    codes = [warning["code"] for line in detail.json()["lines"] for warning in line["warnings"]]
+    assert "BOQ_AMOUNT_MISMATCH" in codes
+    assert "DUPLICATE_STABLE_BOQ_LINE" in codes
+    assert "INVALID_NEGATIVE_COMMERCIAL_VALUE" in codes
+    assert "CURRENCY_DIFFERS_FROM_PROJECT_CONTEXT" in codes
+    assert "INCONSISTENT_GRAND_TOTAL" in codes
+    assert normalized.json()["review_required_rows"] == 4
+    structure = client.post(
+        f"{prefix}/bootstrap/boq-sources/{source.json()['id']}/planning-structures",
+        headers={**headers, "Idempotency-Key": "commercial-structure"},
+        json={},
+    )
+    package_id = structure.json()["work_packages"][0]["id"]
+    reviewed = client.post(
+        f"{prefix}/bootstrap/planning-structures/{structure.json()['id']}/revisions",
+        headers={**headers, "Idempotency-Key": "commercial-structure-review"},
+        json={"action": "ACCEPT_PROPOSAL", "reason": "Planner reviewed commercial grouping."},
+    )
+    draft = client.post(
+        f"{prefix}/bootstrap/planning-structures/{reviewed.json()['id']}/schedule-drafts",
+        headers={**headers, "Idempotency-Key": "commercial-draft"},
+        json={
+            "validation_owner": "planner@example.test",
+            "duration_inputs": [
+                {
+                    "work_package_id": package_id,
+                    "activity_type": "EXECUTION",
+                    "duration_working_days": "2",
+                    "basis": "EXPLICIT_PROJECT_DURATION",
+                    "source_reference": "Planner duration record",
+                    "confidence": "HIGH",
+                }
+            ],
+        },
+    )
+    logic = client.post(
+        f"{prefix}/bootstrap/schedule-drafts/{draft.json()['id']}/logic",
+        headers={**headers, "Idempotency-Key": "commercial-logic"},
+        json={
+            "validation_owner": "planner@example.test",
+            "calendar": {
+                "name": "Reviewed calendar",
+                "working_weekdays": [0, 1, 2, 3, 4],
+                "working_hours_per_day": "8",
+                "review_state": "ACCEPTED",
+            },
+        },
+    )
+    assert logic.status_code == 201, logic.text
+    with sessions() as session:
+        primary = session.scalar(
+            select(ProposedScheduleActivity).where(
+                ProposedScheduleActivity.generation_id == uuid.UUID(draft.json()["id"])
+            )
+        )
+        assert primary is not None
+        session.add(
+            ProposedScheduleActivity(
+                id=uuid.uuid4(),
+                organization_id=uuid.UUID(organization_id),
+                project_id=uuid.UUID(project_id),
+                generation_id=primary.generation_id,
+                activity_code="ACT-OVERALLOC",
+                wbs_node_id=primary.wbs_node_id,
+                work_package_id=primary.work_package_id,
+                boq_line_refs=primary.boq_line_refs,
+                boq_allocations=primary.boq_allocations,
+                activity_name="Invalid duplicate primary allocation",
+                activity_type="HANDOVER",
+                description="Regression fixture for over-allocation gate",
+                duration_working_days=Decimal("1"),
+                duration_unrounded=Decimal("1"),
+                duration_status="EXPLICIT",
+                duration_basis="EXPLICIT_PROJECT_DURATION",
+                confidence="HIGH",
+                review_state="ACCEPTED",
+                warnings=[],
+            )
+        )
+        session.commit()
+    calculation = client.post(
+        f"{prefix}/bootstrap/schedule-drafts/{draft.json()['id']}/calculations",
+        headers={**headers, "Idempotency-Key": "commercial-calculation"},
+        json={"project_start": "2026-10-05"},
+    )
+    assert calculation.status_code == 201, calculation.text
+    assert calculation.json()["readiness"] == "VALIDATION_BLOCKED"
+    assert "UNRESOLVED_BOQ_COMMERCIAL_INTEGRITY" in {
+        item["code"] for item in calculation.json()["validation_findings"]
+    }
+    assert "INVALID_BOQ_ACTIVITY_ALLOCATION" in {
+        item["code"] for item in calculation.json()["validation_findings"]
+    }
 
 
 def test_xlsx_preview_and_invalid_rows_are_reported_before_commit(

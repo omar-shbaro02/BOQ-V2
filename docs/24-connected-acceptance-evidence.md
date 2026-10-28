@@ -1,0 +1,114 @@
+# Connected project acceptance evidence
+
+Executed: **2026-10-27**. Scope: document 19's complete 17-step scenario through public API
+commands in one synthetic project. This is automated technical evidence, not an observed human
+session, a live-provider test, production capacity evidence or pilot authorization.
+
+## What ran
+
+`services/api/tests/integration/test_connected_acceptance.py` creates every project fact through
+public commands. It does not seed domain records directly into the database. The same exercise
+runs with the isolated SQLite evidence fixture and with migrated PostgreSQL inside
+`test_project_context_postgres.py`. The broader PostgreSQL harness has separate seeded fixtures;
+those fixtures are not used as facts by the connected scenario.
+
+| Step | Executed evidence |
+| --- | --- |
+| 1 | Create a new organization and project with explicit actor, timezone and currency. |
+| 2 | Create, review and approve the charter with matching authority. |
+| 3 | Create the site/work-package graph and containment relation. |
+| 4 | Upload a real XLSX BOQ, retain its artifact, extract and normalize two lines. |
+| 5 | Accept structure, supply sourced productivity and a reviewed calendar, calculate CPM. |
+| 6 | Reconcile two BOQ lines to one activity: 200 m3 and USD 2,000, with distinct primary allocations and WBS lineage. |
+| 7 | Review explicit control mappings and planned quantities; authorize a distinct baseline and current schedule using baseline authority. |
+| 8 | Record 80 m3 reported progress, separate verification, exact authorized planned progress of 200 m3, and an evidence-linked daily update. |
+| 9 | Retain separate budget, commitment, actual, accrual, earned-value and physical-value records. Reject combined value bases; assess each separately. |
+| 10 | Separately verify an 8-day delay, open its case through reviewed signal correlation, freeze case evidence and assess the authorized activity. |
+| 11 | Freeze a control snapshot bound to exact progress, cost, schedule assessments and an explicitly owned health policy. |
+| 12 | Assert 100% planned versus 40% verified completion and Red progress/schedule/cost under the explicit synthetic thresholds. Retain rules, inputs and review routes. |
+| 13 | Query the assistant from that snapshot with cited facts. An unselected standalone forecast remains unknown. |
+| 14 | Require separately labeled management considerations without approval or execution authority. |
+| 15 | Generate, review and approve a report with matching authority. Verify its canonical SHA-256 content hash. |
+| 16 | Generate a deck for the frozen stakeholder version. Deny approved download before separate approval; verify approval linkage and artifact hash. |
+| 17 | Compare dashboard API, report, presentation and assistant values. Add later reported progress/daily update and prove all prior outputs remain unchanged. |
+
+The dashboard evidence covers the projection consumed by the frontend. It does not claim a
+browser-driven execution of all 17 steps or visual equality of every rendered screen.
+
+Cost inputs are USD 2,000 authorized budget, 1,200 commitment, 900 actual, 100 accrual and
+800 earned or physical value. Recognized cost is 1,000. The earned-value assessment supports an
+EAC of 2,500 under its stored formula; the separate physical-value assessment keeps EAC unknown.
+EAC remains a forecast, not an actual cost or authorized budget. The schedule's 8-day consequence
+uses this simple one-activity network; it does not establish realistic construction sequencing.
+
+## Reproduce and inspect
+
+From the repository root on Windows:
+
+```powershell
+.venv/Scripts/pytest.exe services/api/tests/integration/test_connected_acceptance.py --basetemp .test-tmp/connected-acceptance -o cache_dir=.test-tmp/cache
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/rehearse_remediation.ps1 -DowngradeTarget 0031_audit_append_only
+```
+
+The PostgreSQL rehearsal runs 0032 → 0031 → 0032, existing authority/correction races and immutable
+guards, the connected scenario, and logical recovery of all public tables, indexes, triggers and
+stored artifacts. The connected project's records/artifact bytes enter those fingerprints. The
+recovery download/tamper/tenant probe uses the harness's separate presentation fixture. The
+executed cluster stopped successfully. Docker's daemon was unavailable, so the documented portable
+runtime was used; PostgreSQL initialization required execution outside the Windows sandbox.
+
+Current PostgreSQL evidence:
+
+`.test-tmp/pg-remediation-a11f3b6e8aa340dd8a0ab2506af98e5e/pytest/test_project_context_postgres_0/`
+
+Ordinary full-suite evidence:
+
+`.test-tmp/connected-full/test_document_19_connected_gov0/`
+
+Each run writes `connected-manifest.json` with all 17 step references, command statuses and
+report/presentation/assistant hashes, plus the exact control snapshot, report, presentation metadata,
+assistant JSON and self-contained presentation HTML. These ignored artifacts are regenerated by
+the commands above; retain them separately for durable acceptance review. The PostgreSQL directory
+also contains `recovery-manifest.json` with fingerprints and missing/tampered-byte/tenant denials.
+
+Current full gate: generated contracts and credential scan pass; **308 Python tests and four
+subtests pass**, with four explicitly gated profiles skipped. Ruff lint/format, Python compilation,
+web ESLint, strict TypeScript and production build pass. The isolated PostgreSQL test passes
+separately. Browser checks, live AI, the HTTPS identity rehearsal and optional load probe were not
+rerun in this slice; their earlier results remain historical evidence.
+
+Three regressions protect observation cut-offs: mismatched planned/actual timestamps, a previous
+project-local reporting day even when the UTC date matches, and observations after the snapshot
+cut-off are rejected. The existing runtime gate was preserved; its long error string and the
+connected test's formatting were corrected to restore lint.
+
+## Remaining acceptance
+
+The connected API demonstration is technically evidenced. R10 remains open for representative
+planner/PM sessions (including BS-001–BS-010 and the amended navigation), manual accessibility,
+actual provider/TLS/forwarding acceptance, staging load/soak and deployed disaster recovery,
+release-blocking findings and explicit pilot approval. Follow documents 15 and 20–23.
+
+Phases 12–14 remain. This evidence does not complete Phase 12 human acceptance, open Phase 13
+automatically, or authorize a pilot.
+
+## Subsequent five-package expansion (2026-10-27)
+
+The same exercise now also runs a five-package variant with ten primary BOQ allocations, four
+explicit finish-to-start links, five separately mapped authorized plans and positive BOQ weights
+totaling exactly one. It records and verifies each package's measurement independently; all five
+contribute to 100% planned/40% verified completion. Only the first package has selected cost and
+schedule assessments. Their supported values remain scoped, and absent analyses for the others
+remain unknown. Later reported changes still cannot rewrite the frozen outputs.
+
+The five-package fixture explicitly uses 100 m3/working day rather than the original one-package
+fixture's 50, so its reviewed ten-working-day network fits the fourteen-calendar-day lookback.
+No recency or sufficiency policy was weakened to obtain a supported result. These synthetic rates
+and sequencing are test inputs, not validated production planning advice.
+
+The ordinary suite runs both variants; the PostgreSQL rehearsal runs both within its migrated
+database and includes both projects and artifact bytes in recovery. Each variant generates an
+original BOQ and a proposed revision file for the session kit. Current five-package evidence:
+`.test-tmp/r10-20261027T174555Z-10a46174/postgres/pytest/test_project_context_postgres_0/five-package/`.
+See [the Phase 12 session kit](26-phase12-operator-session-kit.md) for the new browser controls,
+declared browser-test preconditions and remaining human/phase gates.

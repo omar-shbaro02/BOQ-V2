@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -467,6 +467,7 @@ def activate_context_version(
     data: ContextActivation,
     session: SessionDep,
     actor: ActorDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
 ):
     project = get_scoped_project(session, actor, project_id)
     require_project_roles(
@@ -475,7 +476,9 @@ def activate_context_version(
         project,
         ADMIN_ROLES | {ProjectRole.APPROVER_ESCALATION_AUTHORITY},
     )
-    version = activate_source_version(session, actor, project, data)
+    version = activate_source_version(
+        session, actor, project, data, idempotency_key=idempotency_key
+    )
     commit_or_conflict(session, "Context activation conflict")
     return version
 

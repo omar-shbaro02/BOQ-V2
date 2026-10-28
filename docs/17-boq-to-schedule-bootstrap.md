@@ -57,7 +57,11 @@ Status: **complete** (2026-09-16).
 
 Exit: a representative `.xlsx` BOQ is preserved and extracted reproducibly with rejected/unknown rows retained. Text-native PDF follows the same canonical boundary; scanned PDF remains verification-required unless a governed OCR adapter is available.
 
-Implemented boundary: XLSX/XLSM sources are deterministically extracted into immutable raw rows. PDF sources enter the same immutable source-version boundary but remain `VERIFICATION_REQUIRED` with zero extraction confidence until the governed text/OCR adapter is implemented; no PDF content is promoted to structured truth.
+Implemented boundary: XLSX/XLSM sources are deterministically extracted into immutable raw rows.
+As of 2026-10-26, supported text-native PDF tables enter the same boundary with page/word geometry,
+original text, proposed columns and visible completeness-review warnings. Scanned/mixed/unmapped
+pages remain `VERIFICATION_REQUIRED` and cannot be normalized. PDF extraction does not verify
+content or authorize a schedule. See document 23 for supported layouts and explicit resource limits.
 
 ### B0.2 — Normalization and row classification
 
@@ -122,7 +126,13 @@ Exit: BS-006 and BS-009 pass, CPM results reproduce from the same versioned inpu
 
 ### B0.7 — Planner review, authority approval, versioning, and export
 
-Status: **in progress** (2026-09-16). The twelve-stage browser workbench, immutable planner review, active-grant publication, and authenticated JSON/CSV/XLSX export path are implemented. Human operator acceptance and richer material-edit workflow remain open.
+Status: **in progress**. The twelve-stage browser workbench, immutable planner review, active-grant
+publication, and authenticated JSON/CSV/XLSX export path are implemented. As of 2026-10-26, source/
+classification review and typed duration/productivity/calendar/dependency correction controls are
+implemented with immutable original/revised input history, exact stale-version gates, regenerated
+logic and mandatory recalculation/review/authority. Milestone target and constraint date/type
+correction controls are also implemented. Representative human operator acceptance remains open;
+document 23 records the verified scope and supported editing surfaces.
 
 - Provide the twelve-step BOQ-first workspace from upload through publication.
 - Record material planner edits with original value, revised value, actor, time, and reason.
@@ -163,6 +173,17 @@ still requires representative human observation before these gates are accepted 
 The realistic XLSX API journey and 95-test repository gate are recorded in
 `docs/IMPLEMENTATION_STATUS.md`. This matrix describes automated evidence, not a completed human
 acceptance session.
+
+### Current evidence audit (2026-10-26)
+
+The current executable mapping, remaining boundaries, and reproduction commands are recorded in
+[BOQ bootstrap acceptance evidence](23-bootstrap-acceptance-evidence.md). The evidence module now
+passes 37 cases. Calculation version 1.1.0 corrects backward-pass constraint caps, pre-start deadline
+working-day counts, and free-float bounds. Coverage now explicitly includes all four relationship
+types, holidays/weekends, empty/duplicate schedules, missing trace/duration/calendar/feeder, and
+excessive horizons. The advanced browser journey proves blocked-version correction, recalculation,
+separate human authorization, export and revision isolation. This supplements the historical
+checkpoint without accepting any gate on behalf of a representative operator.
 
 ## Implementation boundaries
 

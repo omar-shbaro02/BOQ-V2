@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-SCHEMA_VERSION = "1.8.0"
+SCHEMA_VERSION = "1.10.0"
 
 
 class SemanticState(StrEnum):
@@ -539,6 +539,7 @@ class ProjectRole(StrEnum):
     DECISION_OWNER = "DECISION_OWNER"
     APPROVER_ESCALATION_AUTHORITY = "APPROVER_ESCALATION_AUTHORITY"
     AUDITOR_READ_ONLY = "AUDITOR_READ_ONLY"
+    SYSTEM_SERVICE = "SYSTEM_SERVICE"
 
 
 class ControlledObjectRelationType(StrEnum):
@@ -553,6 +554,14 @@ class AuthorizedContextType(StrEnum):
     SCHEDULE = "SCHEDULE"
     BUDGET = "BUDGET"
     BOQ = "BOQ"
+    PROGRESS_WEIGHTING = "PROGRESS_WEIGHTING"
+
+
+class ProgressWeightingBasis(StrEnum):
+    BOQ_VALUE = "BOQ_VALUE"
+    COST_VALUE = "COST_VALUE"
+    QUANTITY = "QUANTITY"
+    MANUAL_AUTHORIZED = "MANUAL_AUTHORIZED"
 
 
 class ProjectStatus(StrEnum):

@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.case_schemas import DecisionCaseRead
 from app.generated.taxonomies import (
@@ -13,11 +13,14 @@ from app.generated.taxonomies import (
     ProgressBasis,
     ProgressMeasurementKind,
     ProgressReconciliationStatus,
+    ProgressWeightingBasis,
     SemanticState,
     TrendDirection,
     TrendPersistence,
     TruthType,
 )
+from app.health_schemas import HealthPolicy
+from app.services.control_metrics import shared_metrics
 
 
 class ProgressApiModel(BaseModel):
@@ -92,6 +95,89 @@ class ProgressMeasurementRead(ProgressApiModel):
     confidence: Decimal
     recorded_by: str
     recorded_at: datetime
+
+
+class ProjectControlPackageInput(ProgressApiModel):
+    controlled_object_id: uuid.UUID
+    planned_measurement_id: uuid.UUID
+    actual_measurement_id: uuid.UUID
+
+    @model_validator(mode="after")
+    def distinct_measurements(self) -> ProjectControlPackageInput:
+        if self.planned_measurement_id == self.actual_measurement_id:
+            raise ValueError("Planned and actual measurements must be distinct")
+        return self
+
+
+class ProjectControlSnapshotCreate(ProgressApiModel):
+    data_date: AwareDatetime
+    progress_weighting_context_id: uuid.UUID
+    schedule_context_id: uuid.UUID
+    packages: list[ProjectControlPackageInput] = Field(min_length=1)
+    cost_assessment_ids: list[uuid.UUID] = Field(default_factory=list)
+    forecast_projection_ids: list[uuid.UUID] = Field(default_factory=list)
+    schedule_assessment_ids: list[uuid.UUID] = Field(default_factory=list)
+    health_policy: HealthPolicy | None = None
+    progress_policy_version: str = Field(
+        default="PROGRESS-DEFAULT-1.0.0", min_length=3, max_length=40
+    )
+
+    @model_validator(mode="after")
+    def unique_package_inputs(self) -> ProjectControlSnapshotCreate:
+        if len(self.schedule_assessment_ids) != len(set(self.schedule_assessment_ids)):
+            raise ValueError("Schedule assessment IDs must be unique")
+        object_ids = [item.controlled_object_id for item in self.packages]
+        planned_ids = [item.planned_measurement_id for item in self.packages]
+        actual_ids = [item.actual_measurement_id for item in self.packages]
+        if len(object_ids) != len(set(object_ids)):
+            raise ValueError("Each controlled object may appear only once")
+        if len(planned_ids) != len(set(planned_ids)):
+            raise ValueError("Each planned measurement may appear only once")
+        if len(actual_ids) != len(set(actual_ids)):
+            raise ValueError("Each actual measurement may appear only once")
+        if len(self.cost_assessment_ids) != len(set(self.cost_assessment_ids)):
+            raise ValueError("Cost assessment IDs must be unique")
+        if len(self.forecast_projection_ids) != len(set(self.forecast_projection_ids)):
+            raise ValueError("Forecast projection IDs must be unique")
+        return self
+
+
+class ProjectControlSnapshotRead(ProgressApiModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    project_id: uuid.UUID
+    snapshot_number: int
+    data_date: datetime
+    progress_weighting_context_id: uuid.UUID
+    schedule_context_id: uuid.UUID
+    weighting_basis: ProgressWeightingBasis
+    measurement_basis: ProgressBasis
+    package_results: list[dict[str, Any]]
+    package_exclusions: list[dict[str, Any]]
+    cost_assessment_refs: list[dict[str, Any]]
+    forecast_projection_refs: list[dict[str, Any]]
+    supporting_context: dict[str, Any]
+    health: dict[str, Any]
+    policy_versions: dict[str, Any]
+    planned_ratio: Decimal
+    actual_ratio: Decimal
+    variance_ratio: Decimal
+    progress_status: DeviationDirection
+    progress_policy_version: str
+    input_evidence_ids: list[str]
+    truth_type: TruthType
+    confidence: Decimal
+    limitations: list[dict[str, Any]]
+    formula_version: str
+    idempotency_key: str
+    request_hash: str
+    created_by: str
+    created_at: datetime
+
+    @computed_field
+    @property
+    def shared_metrics(self) -> dict[str, Any]:
+        return shared_metrics(self)
 
 
 class ProgressEvaluationCreate(ProgressApiModel):

@@ -20,11 +20,13 @@ from app.generated.taxonomies import (
     PlanningStructureAction,
     PlanningStructureStatus,
     ProductivitySourceType,
+    ProgressBasis,
     ScheduleActivityArchetype,
     ScheduleConstraintType,
     ScheduleDependencyType,
     ScheduleDraftState,
 )
+from app.schemas import PlannedProgressPoint
 
 
 class BootstrapApiModel(BaseModel):
@@ -80,6 +82,9 @@ class BoqSourceDetail(BoqSourceRead):
 class BoqNormalizeCreate(BootstrapApiModel):
     header_rows: dict[str, int] = Field(default_factory=dict)
     column_mapping: dict[str, dict[str, int]] = Field(default_factory=dict)
+    amount_tolerance: Decimal = Field(
+        default=Decimal("0.01"), ge=0, max_digits=12, decimal_places=4
+    )
 
     @model_validator(mode="after")
     def valid_coordinates(self) -> BoqNormalizeCreate:
@@ -227,6 +232,7 @@ class ProposedScheduleActivityRead(BootstrapApiModel):
     wbs_node_id: str
     work_package_id: str
     boq_line_refs: list[str]
+    boq_allocations: list[dict[str, Any]]
     activity_name: str
     activity_type: ScheduleActivityArchetype
     trade: str | None
@@ -283,6 +289,9 @@ class ScheduleDraftGenerationRead(BootstrapApiModel):
 class ScheduleDraftGenerationDetail(ScheduleDraftGenerationRead):
     activities: list[ProposedScheduleActivityRead] = Field(default_factory=list)
     assumptions: list[PlanningAssumptionRead] = Field(default_factory=list)
+    correction_history: dict[str, Any] | None = None
+    source_version_id: uuid.UUID | None = None
+    source_version_number: int | None = None
 
 
 class PlanningCalendarInput(BootstrapApiModel):
@@ -293,6 +302,7 @@ class PlanningCalendarInput(BootstrapApiModel):
     holidays: list[date] = Field(default_factory=list)
     shift_pattern: str | None = Field(default=None, max_length=160)
     review_state: PlanningReviewState
+    source_reference: str | None = Field(default=None, min_length=3, max_length=300)
 
     @model_validator(mode="after")
     def valid_week(self) -> PlanningCalendarInput:
@@ -338,6 +348,15 @@ class ScheduleLogicCreate(BootstrapApiModel):
     constraints: list[ConstraintProposalInput] = Field(default_factory=list)
     sequence_templates: list[DependencyProposalInput] = Field(default_factory=list)
     validation_owner: str = Field(min_length=3, max_length=200)
+
+
+class ScheduleDraftCorrectionCreate(BootstrapApiModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid", str_strip_whitespace=True)
+    expected_structure_version_id: uuid.UUID
+    expected_logic_proposal_id: uuid.UUID | None = None
+    reason: str = Field(min_length=10, max_length=2000)
+    draft_inputs: ScheduleDraftGenerateCreate
+    logic_inputs: ScheduleLogicCreate | None = None
 
 
 class ScheduleLogicRead(BootstrapApiModel):
@@ -388,9 +407,40 @@ class PlannerEdit(BootstrapApiModel):
     reason: str = Field(min_length=10, max_length=2000)
 
 
+class ActivityControlInput(BootstrapApiModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid", str_strip_whitespace=True)
+    activity_code: str = Field(min_length=1, max_length=80)
+    controlled_object_id: uuid.UUID
+    measurement_basis: ProgressBasis
+    progress_plan: list[PlannedProgressPoint] = Field(default_factory=list)
+    source_reference: str = Field(min_length=3, max_length=300)
+
+    @model_validator(mode="after")
+    def coherent_plan(self) -> ActivityControlInput:
+        dates = [point.as_of for point in self.progress_plan]
+        if dates != sorted(dates) or len(set(dates)) != len(dates):
+            raise ValueError("Planned points require unique ascending dates")
+        if any(point.measurement_basis != self.measurement_basis for point in self.progress_plan):
+            raise ValueError("Planned points must use the selected measurement basis")
+        if len({(point.unit, point.denominator) for point in self.progress_plan}) > 1:
+            raise ValueError("Planned points require one consistent unit and denominator")
+        return self
+
+
 class ScheduleReviewCreate(BootstrapApiModel):
     edits: list[PlannerEdit] = Field(default_factory=list)
+    control_inputs: list[ActivityControlInput] = Field(default_factory=list)
     reason: str = Field(min_length=10, max_length=2000)
+
+    @model_validator(mode="after")
+    def unique_control_inputs(self) -> ScheduleReviewCreate:
+        if len({item.activity_code for item in self.control_inputs}) != len(self.control_inputs):
+            raise ValueError("Each activity requires at most one control binding")
+        if len({item.controlled_object_id for item in self.control_inputs}) != len(
+            self.control_inputs
+        ):
+            raise ValueError("Each controlled object requires one unambiguous activity plan")
+        return self
 
 
 class ScheduleApprovalCreate(BootstrapApiModel):

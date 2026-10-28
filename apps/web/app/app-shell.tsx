@@ -2,25 +2,59 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { SessionControl } from "./session-control";
+import { WorkflowNavigation, workflowGroups } from "./workflow-navigation";
 
-const groups = [
-  { label: "Overview", links: [{ href: "/", label: "Command center", icon: "grid" }, { href: "/decision-center", label: "Decision queue", icon: "pulse" }, { href: "/setup", label: "Projects", icon: "folder" }] },
-  { label: "Plan & control", links: [{ href: "/bootstrap", label: "BOQ to schedule", icon: "layers" }, { href: "/progress", label: "Progress", icon: "trend" }, { href: "/schedule", label: "Schedule", icon: "calendar" }, { href: "/cost", label: "Cost control", icon: "wallet" }, { href: "/forecast", label: "Forecasts", icon: "chart" }] },
-  { label: "Intelligence", links: [{ href: "/evidence", label: "Evidence", icon: "file" }, { href: "/signals", label: "Signals", icon: "signal" }, { href: "/cases", label: "Decision cases", icon: "briefcase" }, { href: "/impact", label: "Impact & priority", icon: "target" }, { href: "/orchestration", label: "Orchestration", icon: "nodes" }] },
-];
+const groups = [{ label: "Workspace overview", links: [{ href: "/", label: "Command center", icon: "grid" }] }, ...workflowGroups];
+
+function subscribeToViewport(callback: () => void) {
+  const query = window.matchMedia("(max-width: 850px)");
+  query.addEventListener("change", callback);
+  return () => query.removeEventListener("change", callback);
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const mobile = useSyncExternalStore(subscribeToViewport, () => window.matchMedia("(max-width: 850px)").matches, () => false);
+  const navigationOpen = mobile && open;
+  const sidebar = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!navigationOpen) return;
+    const navigation = sidebar.current;
+    const opener = menuButton.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    navigation?.querySelector<HTMLButtonElement>(".sidebar-close")?.focus();
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+      } else if (event.key === "Tab") {
+        const controls = Array.from(navigation?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)") ?? []).filter((element) => element.getClientRects().length > 0);
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKey);
+      opener?.focus();
+    };
+  }, [navigationOpen]);
   return <div className="app-frame">
-    <aside className={`app-sidebar ${open ? "open" : ""}`} aria-label="Primary navigation">
-      <div className="brand-row"><Link className="brand" href="/" onClick={() => setOpen(false)} aria-label="VAI command center"><span className="brand-mark">V</span><span><strong>VAI</strong><small>Project intelligence</small></span></Link><button className="sidebar-close" onClick={() => setOpen(false)} aria-label="Close navigation">×</button></div>
-      <nav className="sidebar-nav">{groups.map((group) => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span>{group.links.map((link) => { const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href); return <Link className={`nav-link ${active ? "active" : ""}`} href={link.href} key={link.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined}><NavIcon name={link.icon}/><span>{link.label}</span>{link.href === "/signals" ? <i>5</i> : null}</Link>; })}</div>)}</nav>
-      <div className="sidebar-project"><span className="project-avatar">PW</span><span><strong>Project workspace</strong><small>Managed automatically</small></span><span className="project-dot" aria-label="Workspace available"/></div>
+    <a className="skip-link" href="#main-content" inert={navigationOpen}>Skip to main content</a>
+    <aside ref={sidebar} id="primary-navigation" className={`app-sidebar ${navigationOpen ? "open" : ""}`} role={navigationOpen ? "dialog" : undefined} aria-modal={navigationOpen || undefined} aria-label="Primary navigation">
+      <div className="brand-row"><Link className="brand" href="/" onClick={() => setOpen(false)}><span className="brand-mark" aria-hidden="true">V</span><span><strong>VAI</strong><small>Project intelligence</small></span></Link><button className="sidebar-close" onClick={() => setOpen(false)} aria-label="Close navigation">×</button></div>
+      <nav className="sidebar-nav" aria-label="Project workflow">{groups.map((group) => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span>{group.links.map((link) => { const active = link.href === "/" ? pathname === "/" : (pathname === link.href || pathname.startsWith(`${link.href}/`)); return <Link className={`nav-link ${active ? "active" : ""}`} href={link.href} key={link.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined}><NavIcon name={link.icon}/><span>{link.label}</span></Link>; })}</div>)}</nav>
+      <div className="sidebar-project"><span className="project-avatar">PW</span><span><strong>Project workspace</strong><small>Follow the stages above</small></span></div>
     </aside>
-    {open ? <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setOpen(false)}/> : null}
-    <div className="app-stage"><header className="app-topbar"><button className="menu-button" onClick={() => setOpen(true)} aria-label="Open navigation"><NavIcon name="menu"/></button><div className="topbar-context"><span className="live-dot"/> Project control workspace <small>Governed decision intelligence</small></div><div className="topbar-actions"><button aria-label="Search"><NavIcon name="search"/></button><button className="notification-button" aria-label="Notifications"><NavIcon name="bell"/><i/></button><Link className="user-chip" href="/setup"><span>OA</span><span><strong>Local admin</strong><small>Configure project</small></span></Link></div></header><div className="app-content">{children}</div></div>
+    {navigationOpen ? <button className="sidebar-scrim" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(false)}/> : null}
+    <div className="app-stage" inert={navigationOpen}><header className="app-topbar"><button ref={menuButton} className="menu-button" onClick={() => setOpen(true)} aria-label="Open navigation" aria-controls="primary-navigation" aria-expanded={navigationOpen}><NavIcon name="menu"/></button><div className="topbar-context">Project control workspace <small>Plan · Evidence · Decisions</small></div><div className="topbar-actions"><Link className="topbar-queue" href="/decision-center">Decision queue <span aria-hidden="true">↗</span></Link><SessionControl /></div></header><div className="app-content" id="main-content" tabIndex={-1}><WorkflowNavigation pathname={pathname} position="top"/>{children}<WorkflowNavigation pathname={pathname} position="bottom"/></div></div>
   </div>;
 }
 

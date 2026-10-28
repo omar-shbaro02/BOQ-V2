@@ -1,8 +1,13 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.generated import taxonomies
+from app.http_security import RedactAccessQuery, RequestSecurityMiddleware
+from app.route_scope import require_local_preview, require_route_scope
+from app.routers.authentication import router as authentication_router
 from app.routers.bootstrap import router as bootstrap_router
 from app.routers.cases import router as cases_router
 from app.routers.control_context import router as control_context_router
@@ -14,15 +19,21 @@ from app.routers.governance import router as governance_router
 from app.routers.impact import router as impact_router
 from app.routers.ms_project import router as ms_project_router
 from app.routers.orchestration import router as orchestration_router
+from app.routers.presentations import router as presentations_router
 from app.routers.progress import router as progress_router
+from app.routers.project_context import router as project_context_router
 from app.routers.schedule import router as schedule_router
 from app.routers.signals import router as signals_router
 
 settings = get_settings()
+logging.getLogger("uvicorn.access").addFilter(RedactAccessQuery())
 app = FastAPI(
     title="VAI Project Control Decision Intelligence API",
     version="0.1.0",
     description="Governed decision support. Recommendations never constitute human decisions.",
+    docs_url="/docs" if settings.environment in {"development", "test"} else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if settings.environment in {"development", "test"} else None,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -31,26 +42,34 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=[
         "Content-Type",
+        "Authorization",
         "Idempotency-Key",
         "X-VAI-Actor-ID",
         "X-VAI-Organization-ID",
         "X-VAI-Roles",
     ],
 )
-app.include_router(control_context_router)
-app.include_router(evidence_router)
-app.include_router(bootstrap_router)
-app.include_router(ms_project_router)
-app.include_router(signals_router)
-app.include_router(cases_router)
-app.include_router(progress_router)
-app.include_router(schedule_router)
-app.include_router(cost_router)
-app.include_router(decision_center_router)
-app.include_router(forecast_router)
-app.include_router(impact_router)
-app.include_router(orchestration_router)
-app.include_router(governance_router)
+app.add_middleware(RequestSecurityMiddleware)
+app.include_router(authentication_router)
+app.include_router(ms_project_router, dependencies=[Depends(require_local_preview)])
+for protected_router in (
+    control_context_router,
+    evidence_router,
+    bootstrap_router,
+    signals_router,
+    cases_router,
+    progress_router,
+    presentations_router,
+    project_context_router,
+    schedule_router,
+    cost_router,
+    decision_center_router,
+    forecast_router,
+    impact_router,
+    orchestration_router,
+    governance_router,
+):
+    app.include_router(protected_router, dependencies=[Depends(require_route_scope)])
 
 
 @app.get("/health", tags=["operations"])
@@ -100,6 +119,7 @@ def get_taxonomies() -> dict[str, object]:
         "ProjectRole",
         "ControlledObjectRelationType",
         "AuthorizedContextType",
+        "ProgressWeightingBasis",
         "ProjectStatus",
         "EvidenceItemStatus",
         "EvidenceRelationType",

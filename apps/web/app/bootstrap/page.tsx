@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { currentWorkspace } from "../workspace-session";
 
 const API = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -17,7 +18,7 @@ type Project = {
 type Workspace = { actorId: string; organizationId: string; organizationName?: string };
 type Artifact = { id: string; original_filename: string; source_type: string; size_bytes: number; received_at: string };
 type BoqSource = { id: string; artifact_id: string; version_number: number; extraction_status: string; extracted_row_count: number; created_at: string };
-type GeneratedResult = { blob: Blob; filename: string; taskCount: string };
+type GeneratedResult = { blob: Blob; filename: string; taskCount: string; qaStatus: string; findingCount: string };
 
 export default function BootstrapPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -35,10 +36,10 @@ export default function BootstrapPage() {
   useEffect(() => {
     async function initialize() {
       await Promise.resolve();
-      const saved = localStorage.getItem("vai-project-workspace") ?? sessionStorage.getItem("vai-project-workspace");
-      if (!saved) { setWorkspaceReady(true); return; }
-      let active: Workspace;
-      try { active = JSON.parse(saved) as Workspace; } catch { localStorage.removeItem("vai-project-workspace"); setWorkspaceReady(true); return; }
+      let active: Workspace | null;
+      try { active = await currentWorkspace(); }
+      catch (cause) { setError(cause instanceof Error ? cause.message : "Identity service is unavailable."); setWorkspaceReady(true); return; }
+      if (!active) { setWorkspaceReady(true); return; }
       setWorkspace(active);
       setBusy(true);
       try {
@@ -83,9 +84,15 @@ export default function BootstrapPage() {
       if (!(boq instanceof File) || !boq.size) throw new Error("Choose a BOQ PDF first.");
 
       setMessage("Saving the BOQ to the project…");
-      const boqArtifact = await saveArtifact(boq, "BOQ_UPLOAD", `BOQ ${boq.name}`);
+      const priorSource = await latestBoqSource();
+      const boqArtifact = await saveArtifact(
+        boq,
+        "BOQ_UPLOAD",
+        `BOQ ${boq.name}`,
+        priorSource?.artifact_id,
+      );
       boqWasSaved = true;
-      await registerBoqSource(boqArtifact.id);
+      await registerBoqSource(boqArtifact.id, priorSource?.id ?? null);
 
       setMessage("The BOQ is saved. Building the schedule workbook…");
       const response = await fetch(`${API}/api/v1/ms-project/generate-ai`, { method: "POST", body: form });
@@ -93,6 +100,8 @@ export default function BootstrapPage() {
       const blob = await response.blob();
       const filename = `${project.code}-schedule-and-progress.xlsx`;
       const taskCount = response.headers.get("X-VAI-Task-Count") ?? "?";
+      const qaStatus = response.headers.get("X-VAI-QA-Status") ?? "REVIEW REQUIRED";
+      const findingCount = response.headers.get("X-VAI-QA-Finding-Count") ?? "?";
       let outputArtifactId: string | undefined;
       try {
         const output = await saveArtifact(new File([blob], filename, { type: blob.type }), "AI_SCHEDULE_EXPORT", `Schedule generated from ${boq.name}`);
@@ -100,12 +109,12 @@ export default function BootstrapPage() {
       } catch {
         setMessage("Schedule generated, but its saved copy could not be created. Download it now before leaving this page.");
       }
-      setResult({ blob, filename, taskCount });
+      setResult({ blob, filename, taskCount, qaStatus, findingCount });
       if (outputArtifactId) setMessage("Schedule ready. Download the Excel workbook below, then review it before approval.");
       await refreshLibrary(workspace, project.id);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Conversion failed";
-      setMessage(boqWasSaved ? "The BOQ is safely stored in Project files. Schedule generation did not finish." : "");
+      setMessage(boqWasSaved ? "The BOQ is stored, but no Excel workbook was created. Review the error above and try again." : "");
       setError(detail === "Failed to fetch" ? "The scheduler connection was interrupted. The BOQ remains saved; try Generate schedule again." : detail);
     } finally {
       if (workspace && project) await refreshLibrary(workspace, project.id);
@@ -121,35 +130,43 @@ export default function BootstrapPage() {
     return { "X-VAI-Actor-ID": active?.actorId ?? "", "X-VAI-Organization-ID": active?.organizationId ?? "" };
   }
 
-  async function saveArtifact(file: File, sourceType: string, sourceId: string): Promise<Artifact> {
+  async function saveArtifact(
+    file: File,
+    sourceType: string,
+    sourceId: string,
+    supersedesArtifactId?: string,
+  ): Promise<Artifact> {
     if (!project) throw new Error("Choose a project first.");
     const data = new FormData();
     data.set("upload", file);
     data.set("source_type", sourceType);
     data.set("source_id", sourceId);
     data.set("classification", "INTERNAL");
+    if (supersedesArtifactId) data.set("supersedes_artifact_id", supersedesArtifactId);
     const response = await fetch(`${API}/api/v1/projects/${project.id}/evidence/artifacts`, { method: "POST", headers: authHeaders(), body: data });
     if (!response.ok) throw new Error(await readError(response));
     return await response.json() as Artifact;
   }
 
-  async function registerBoqSource(artifactId: string) {
+  async function latestBoqSource(): Promise<BoqSource | null> {
+    if (!project || !workspace) return null;
+    const response = await fetch(`${API}/api/v1/projects/${project.id}/bootstrap/boq-sources`, {
+      headers: authHeaders(workspace),
+    });
+    if (!response.ok) throw new Error(await readError(response));
+    const current = await response.json() as BoqSource[];
+    return current[0] ?? null;
+  }
+
+  async function registerBoqSource(artifactId: string, priorId: string | null) {
     if (!project || !workspace) return;
-    let priorId = sources[0]?.id ?? null;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await fetch(`${API}/api/v1/projects/${project.id}/bootstrap/boq-sources`, {
-        method: "POST",
-        headers: { ...jsonHeaders(), "Idempotency-Key": `simple-boq-${artifactId}` },
-        body: JSON.stringify({ artifact_id: artifactId, prior_source_version_id: priorId }),
-      });
-      if (response.ok) return;
-      if (response.status !== 409 || attempt > 0) {
-        throw new Error(`The BOQ was saved, but its project record could not be created: ${await readError(response)}`);
-      }
-      const latest = await fetch(`${API}/api/v1/projects/${project.id}/bootstrap/boq-sources`, { headers: authHeaders(workspace) });
-      if (!latest.ok) throw new Error(await readError(latest));
-      const current = await latest.json() as BoqSource[];
-      priorId = current[0]?.id ?? null;
+    const response = await fetch(`${API}/api/v1/projects/${project.id}/bootstrap/boq-sources`, {
+      method: "POST",
+      headers: { ...jsonHeaders(), "Idempotency-Key": `simple-boq-${artifactId}` },
+      body: JSON.stringify({ artifact_id: artifactId, prior_source_version_id: priorId }),
+    });
+    if (!response.ok) {
+      throw new Error(`The BOQ was saved, but its project record could not be created: ${await readError(response)}`);
     }
   }
 
@@ -229,7 +246,7 @@ export default function BootstrapPage() {
           </select>
         </label>}
 
-        {project ? <div className="autofill-grid" aria-label="Selected project details">
+        {project ? <div className="autofill-grid" role="group" aria-label="Selected project details">
           <Auto label="Project code" value={project.code} />
           <Auto label="Timezone" value={project.timezone} />
           <Auto label="Currency" value={project.currency} />
@@ -261,6 +278,7 @@ export default function BootstrapPage() {
             <div className="schedule-inputs">
               <label><span>Project start</span><input name="project_start" type="date" required /></label>
               <label><span>Required completion <small>Optional</small></span><input name="target_finish" type="date" /></label>
+              <label><span>Working week</span><select name="workweek" defaultValue="MON_SAT"><option value="MON_SAT">Monday–Saturday</option><option value="MON_FRI">Monday–Friday</option></select></label>
             </div>
           </div>
 
@@ -293,7 +311,7 @@ export default function BootstrapPage() {
       {message ? <p className="form-message success" role="status">{message}</p> : null}
       {result ? <section className="generation-result" aria-labelledby="generation-result-title">
         <span className="result-check" aria-hidden="true">✓</span>
-        <div><span className="section-kicker">Schedule generated</span><h2 id="generation-result-title">Your Excel workbook is ready</h2><p>{result.taskCount} schedule activities were generated. The workbook is a proposal and must be reviewed before it becomes an approved schedule.</p></div>
+        <div><span className="section-kicker">Schedule generated · QA {result.qaStatus}</span><h2 id="generation-result-title">Your Excel workbook is ready</h2><p>{result.taskCount} activities and {result.findingCount} independent QA findings were generated. Review the BOQ Coverage and QA Review sheets before approval.</p></div>
         <button className="primary-action" type="button" onClick={() => download(result.blob, result.filename)}>Download Excel workbook <span aria-hidden="true">↓</span></button>
         <ol><li><strong>Download</strong><span>Save the XLSX workbook to your computer.</span></li><li><strong>Review</strong><span>Open it in Excel or import it into MS Project and check dates, durations, and dependencies.</span></li><li><strong>Continue</strong><span>Use the schedule assistant for reviewed changes; approval remains a separate governed step.</span></li></ol>
         <Link className="secondary-action" href="/bootstrap/schedule-assistant">Open schedule assistant →</Link>

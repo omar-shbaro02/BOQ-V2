@@ -39,6 +39,17 @@ Read these in order:
 
 Current progress is recorded in [Implementation Status](docs/IMPLEMENTATION_STATUS.md).
 
+Run `.venv/Scripts/python.exe scripts/verify_r10.py` on Windows (or `make verify-r10` on POSIX)
+to collect the R10 engineering checks into one PASS/FAIL/NOT RUN evidence report. Human and staging
+acceptance remain explicit open gates; see [R10 verification runner](docs/25-r10-verification-runner.md).
+
+Production browser sign-in uses the existing API's OIDC/PKCE flow and encrypted HttpOnly sessions.
+Configure same-origin API proxying, identity, storage, scanning, and deployment controls using
+[Production hardening](docs/20-production-hardening.md). Local evaluation keeps its existing
+workspace flow. Run `make check-secrets` and `npm run test:browser:oidc` for credential checks and
+the isolated HTTPS production-build identity rehearsal; neither substitutes for live deployment
+verification or human operator acceptance.
+
 ## Local development
 
 Requirements: Python 3.12+, Node.js 22+, npm, and Podman or Docker with Compose support.
@@ -53,9 +64,47 @@ make up
 
 Run the applications in separate terminals with `make api` and `make web`. Stop local infrastructure with `make down`. Docker users can pass `COMPOSE="docker compose"` to the infrastructure targets.
 
+Default API tests clear optional AI credentials and block external HTTP. The separate
+`pytest -m live_adapter --live-adapters` profile uses synthetic input and the configured server-side
+credential; it can incur API charges and is skipped by default. Browser regression checks run with
+`npm run test:browser` after `npx playwright install chromium`; `PLAYWRIGHT_CHANNEL=chrome` can use
+an installed Chrome instead. They launch an isolated API/database and web server on ports 8011
+and 3011, without developer database or AI credentials. On Windows, use `.venv\Scripts\pytest.exe`
+and `--basetemp .test-tmp/tests -o cache_dir=.test-tmp/cache` when the system temporary directory is
+restricted. `scripts/rehearse_remediation.ps1` rehearses migration upgrade/rollback/re-upgrade and
+database immutability with the bundled PostgreSQL runtime when Docker Desktop is unavailable.
+It also verifies concurrent authorization and logical database/artifact backup restoration;
+[recovery verification](docs/21-recovery-verification.md) distinguishes that local evidence from
+the remaining staging disaster-recovery requirements.
+The browser suite also runs the accessibility matrix. Queue-query growth has a fast deterministic
+regression; add `-RunLoadProbe` to the PostgreSQL rehearsal for the optional concurrent read profile.
+See [nonfunctional verification](docs/22-nonfunctional-verification.md) for scope and limits.
+
+The advanced BOQ workbench also extracts supported text-native PDF tables into immutable page/row
+records with word geometry and visible review warnings. Scanned, mixed, unmapped or ambiguous
+table pages remain verification-required; extraction never verifies quantities or authorizes a
+schedule. See [bootstrap acceptance evidence](docs/23-bootstrap-acceptance-evidence.md) for layout
+and resource limits. Put Poppler's `pdftotext` on PATH for PDF extraction and the PDF browser test;
+API containers and the Windows portable runtime include it. Real-engine Python checks skip
+explicitly when it is absent, while the PDF browser journey requires it.
+
+At `/bootstrap/advanced`, **Review source and classification** compares preserved rows with proposed
+normalization, exclusions, warnings and exact source locations, and downloads the original BOQ.
+The correction panel stages sourced durations/productivity, calendars, dependency type/lag,
+milestone targets and constraint dates/types. Saving creates an immutable successor with an
+attributed change history; CPM, planner review and schedule authorization remain separate steps.
+
 For a direct MS Project import workbook, open `/bootstrap` and upload a text-native BOQ PDF plus an XLSX example with `ID, Name, Duration, Start, Finish, Dependency` columns. The downloaded workbook keeps that Tasks layout and adds a BOQ Review sheet. Existing example dates, durations, and dependencies are reused only as draft inputs; unmatched BOQ scope is included as unscheduled rows, never assigned invented timing. Map `Dependency` to MS Project's `Predecessors` field when importing. The converter requires `pdftotext` (Poppler); the API container installs it. Scanned PDFs need OCR before conversion. The advanced governed planning workbench remains at `/bootstrap/advanced` and its publication authority boundary is unchanged.
 
 After creating a development organization/project at `/setup`, open `/evidence` to connect that project, upload governed source artifacts, record typed reported claims, inspect the evidence ledger, and create separate human verification results. Local artifact storage and the development malware gate deliberately fail closed outside development/test until production adapters are configured.
+
+At `/setup`, **Project governance setup** also manages work packages/WBS, versioned charters,
+stakeholders/report recipients and evidence-linked reported daily updates. Budget and progress
+weights are saved as proposals and authorized separately with the acting human's matching grant.
+At `/progress`, **Issue project-control snapshot** selects exact authorized sources, governed
+measurements, optional case assessments and explicit health thresholds for reporting. Use the
+[Phase 12 session kit](docs/26-phase12-operator-session-kit.md) for representative operator acceptance;
+automated fixture runs do not complete the human or pilot gates.
 
 Open `/signals` to run versioned deterministic detectors, screen candidates with explicit reason codes, and review correlation suggestions. Signals remain separate from Decision Cases; no case is opened, linked, or grouped until a reviewer accepts the visible correlation rationale.
 
@@ -63,11 +112,17 @@ Open `/cases` after accepting a correlation to assemble case evidence, freeze im
 
 Open `/progress` to normalize evidence-backed planned, reported, executed, verified, and accepted/released measurements without collapsing their semantics. Progress evaluation remains inside `/cases`, where compatible bases can be compared against the frozen authorized plan with visible threshold, productivity, trend, persistence, truth, confidence, and formula lineage.
 
+The `/progress` workbook preview is explicitly approximate and unpersisted. To retain the workbook
+as governed evidence, load a project, match every preview task to an authorized schedule activity,
+and save it with a reporting cut-off and source confidence. Saved imports retain their source
+artifact, exact schedule/calendar/network version, reported evidence and measurements, unknowns,
+and history across refresh. They do not verify completion or issue a deadline forecast.
+
 Open `/schedule` to inspect the current authorized network, calendars, constraints, dependency logic, milestones, float, and schedule-quality policies. Schedule assessment remains inside `/cases`, where delay evidence is traced through the exact frozen authorized version and unsupported downstream conclusions stop at local timing variance.
 
 The simple `/bootstrap` workspace can generate a proposed six-column MS Project schedule directly from a text-native BOQ by using the OpenAI Responses API. The OpenAI credential is server-only through `VAI_OPENAI_API_KEY`; it is never accepted from the customer browser. Use `VAI_OPENAI_SCHEDULE_MODEL` to override the default model. VAI owns and creates the standardized workbook, so clients upload only their BOQ rather than an Excel template. The exported workbook contains only `ID`, `Name`, `Duration`, `Start`, `Finish`, and `Dependency`. Model output is JSON-schema constrained and locally validated, but remains a planner-review proposal rather than an authorized baseline.
 
-The simple workspace preserves each uploaded BOQ and generated XLSX as project-scoped artifacts in the configured evidence store, with metadata in PostgreSQL. The result screen provides an explicit Excel download and review guidance, while the Project files section lets operators download both inputs and outputs again in later sessions. Production object storage remains fail-closed until its external adapter is selected.
+The simple workspace preserves each uploaded BOQ and generated XLSX as project-scoped artifacts in the configured evidence store, with metadata in PostgreSQL. The workbook keeps the six-column MS Project-compatible `Tasks` sheet and adds `BOQ Coverage` plus `QA Review` sheets. Every extracted measurable item receives a visible mapping disposition; calendar, dependency, scope, sequencing, duplicate-allocation, and unsupported-assumption findings can mark the proposal `BLOCKED` without suppressing the review file. The result screen provides an explicit Excel download and review guidance, while the Project files section lets operators download both inputs and outputs again in later sessions. The S3 backend remains fail-closed until configured; production gateway/session and live adapter verification are still required. See [Production hardening](docs/20-production-hardening.md).
 
 Open `/bootstrap/schedule-assistant` to upload an existing six-column XLSX and request a proposed delay, deadline, duration, sequencing, or dependency change. It returns a ZIP with a re-import XLSX, Word change report, and JSON manifest. The assistant cannot approve or baseline a schedule; review and recalculate the proposal in Microsoft Project first. See [Schedule-Change Assistant](docs/18-schedule-change-assistant.md).
 
@@ -104,6 +159,13 @@ Authorized interventions proceed through separate immutable response proposals, 
 Open `/decision-center` for the consolidated management-attention queue. It keeps priority, urgency, confidence, readiness, governance route, latest recommendation, signed decision basis, human disposition, limitations, response state, deadlines, and next action visibly separate. Governed JSON exports are available for the weekly decision brief, case dossier, project-control exceptions, pilot KPIs, and governance/conformity review.
 
 Reports include deterministic content hashes and semantic fidelity manifests. The Decision Queue also exports to CSV with recommendation, signed decision basis, and human disposition in separate columns. Phase 12 operator acceptance follows the time-boxed protocol in `docs/15-operator-usability-protocol.md` and requires representative human observation rather than automated tests alone.
+
+After loading a project, expand **Report and presentation history** to freeze a status report
+from a control snapshot, review and approve it, select recipients from its frozen stakeholder
+registry, and generate self-contained HTML slides. Review and approve the presentation separately
+before using its approved download. Slides open offline, print from the browser, and retain the
+complete source report, hashes, limitations, and semantic notices. Approval requires the acting
+human's matching project-wide `REPORT_APPROVAL` grant; generation never sends communications.
 
 ### Local Windows and Linux installers
 

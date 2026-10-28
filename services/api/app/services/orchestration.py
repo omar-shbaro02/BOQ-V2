@@ -5,7 +5,7 @@ import json
 import re
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, DecimalException, localcontext
 from typing import Any
 
 from app.auth import ActorContext
@@ -46,7 +46,7 @@ from sqlalchemy.orm import Session
 
 CONTRACT_VERSION = "SPECIALIST-CONTRACT-1.0.0"
 FORMULA_VERSION = "ORCHESTRATOR-DETERMINISTIC-1.0.0"
-NARRATIVE_VALIDATOR_VERSION = "CASE-BRIEF-FIDELITY-1.0.0"
+NARRATIVE_VALIDATOR_VERSION = "CASE-BRIEF-FIDELITY-1.1.0"
 
 
 def request_digest(data: OrchestrationCreate) -> str:
@@ -388,10 +388,78 @@ def validate_narrative(run: OrchestrationRun, narrative: str) -> dict[str, Any]:
                     "description": f"Narrative contains prohibited authority claim: {claim}",
                 }
             )
-    allowed_numbers = set(
-        re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", json.dumps(run.case_brief))
-    )
-    narrative_numbers = set(re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", narrative))
+    numeric = re.compile(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+    uuid_pattern = re.compile(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b")
+    allowed_numbers, references, dates = set(), set(), set()
+
+    def canonical_number(value):
+        try:
+            with localcontext() as context:
+                context.prec = max(28, len(str(value)))
+                return str(Decimal(str(value)).normalize())
+        except DecimalException:
+            return str(value)
+
+    def collect(value, key="", factual=True):
+        if isinstance(value, dict):
+            for name, item in value.items():
+                collect(
+                    item,
+                    name,
+                    factual
+                    and name
+                    not in {
+                        "limitations",
+                        "blockers",
+                        "contradictions",
+                        "evidence_request",
+                        "monitoring_trigger",
+                    },
+                )
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, key, factual)
+        elif isinstance(value, str) and uuid_pattern.fullmatch(value):
+            references.add(value.lower())
+        elif isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:T[0-9:.+Z-]+)?", value):
+            dates.add(value)
+        elif (
+            factual
+            and key
+            not in {
+                "id",
+                "code",
+                "version",
+                "reference",
+                "description",
+                "reason",
+                "condition",
+                "message",
+                "title",
+                "text",
+                "notes",
+            }
+            and not key.endswith(("_id", "_ids", "_code", "_version", "_reference"))
+            and not isinstance(value, bool)
+            and value is not None
+            and numeric.fullmatch(str(value))
+        ):
+            allowed_numbers.add(canonical_number(value))
+
+    collect(run.case_brief)
+    # Exact source references and dates remain citations, never numerical evidence for amounts.
+    for match in uuid_pattern.finditer(narrative):
+        if match.group().lower() not in references:
+            violations.append(
+                {
+                    "code": "UNSUPPORTED_SOURCE_REFERENCE",
+                    "description": "Narrative cites a record absent from the structured case brief",
+                }
+            )
+    numeric_text = uuid_pattern.sub(" ", narrative)
+    for date in sorted(dates, key=len, reverse=True):
+        numeric_text = re.sub(r"(?<!\w)" + re.escape(date) + r"(?![\w:+-]|\.\d)", " ", numeric_text)
+    narrative_numbers = {canonical_number(number) for number in numeric.findall(numeric_text)}
     for number in sorted(narrative_numbers - allowed_numbers):
         violations.append(
             {

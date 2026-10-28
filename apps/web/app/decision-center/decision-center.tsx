@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { ProjectContextFields } from "../project-context-fields";
+import { ReportPresentations } from "./report-presentations";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -138,6 +139,7 @@ export function DecisionCenter() {
 
   return (
     <div className="decision-center-grid">
+      {connection ? <ReportPresentations key={`${connection.projectId}:${connection.actorId}:${connection.organizationId}`} connection={connection} /> : null}
       <section className="workbench-card full-width" aria-labelledby="center-context">
         <span className="step-number">01</span>
         <h2 id="center-context">Choose project</h2>
@@ -167,7 +169,7 @@ export function DecisionCenter() {
           </div>
         </div>
         <p className="panel-note">Sorted by governed priority and urgency. Confidence is shown separately and never drives the visual priority label.</p>
-        <div className="queue-table-wrap">
+        <div className="queue-table-wrap" role="region" aria-label="Decision queue table" tabIndex={0}>
           <table className="decision-queue-table">
             <caption className="sr-only">Decision Cases ordered for management attention</caption>
             <thead><tr><th scope="col">Case</th><th scope="col">Priority / urgency</th><th scope="col">Recommendation / decision</th><th scope="col">Readiness / authority</th><th scope="col">Next action</th><th scope="col">Export</th></tr></thead>
@@ -178,9 +180,8 @@ export function DecisionCenter() {
               <td><span>{item.readiness ?? "NOT ASSESSED"}</span><strong>{item.governance_state}</strong><small>{item.open_limitation_count} open limitations · {item.active_response_count} active responses</small></td>
               <td><strong>{item.next_action.replaceAll("_", " ")}</strong><small>Deadline {formatProjectTime(item.next_deadline, reviewQueues?.project_timezone)}</small><small>Consequence {item.consequence_window ?? "unknown"}</small></td>
               <td><button className="text-button" disabled={busy} onClick={() => exportReport(`case-dossier/${item.case_id}`, `${item.case_number}-dossier.json`)}>Case dossier</button></td>
-            </tr>)}</tbody>
+            </tr>)}{visible.length === 0 ? <tr><td colSpan={6} className="empty-state">{connection ? "No cases match the selected governed filters." : "Load a project to inspect Decision Cases."}</td></tr> : null}</tbody>
           </table>
-          {connection && visible.length === 0 ? <p className="empty-state">No cases match the selected governed filters.</p> : null}
         </div>
       </section>
 

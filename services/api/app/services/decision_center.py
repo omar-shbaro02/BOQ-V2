@@ -41,8 +41,16 @@ REPORT_NOTICE = (
 )
 
 
-def _latest(session: Session, model: Any, case_id: uuid.UUID, order: Any) -> Any | None:
-    return session.scalar(select(model).where(model.case_id == case_id).order_by(order.desc()))
+def _latest_query(model: Any, case_ids: Any, order: Any) -> Any:
+    ranked = (
+        select(
+            model.id,
+            func.row_number().over(partition_by=model.case_id, order_by=order.desc()).label("rank"),
+        )
+        .where(model.case_id.in_(case_ids))
+        .subquery()
+    )
+    return select(model).join(ranked, model.id == ranked.c.id).where(ranked.c.rank == 1)
 
 
 def _next_action(case: DecisionCaseShell) -> str:
@@ -66,38 +74,66 @@ def decision_queue(session: Session, project: Project) -> list[DecisionQueueItem
             .order_by(DecisionCaseShell.opened_at.desc())
         )
     )
-    items: list[DecisionQueueItem] = []
-    for case in cases:
-        impact = _latest(session, ImpactAssessment, case.id, ImpactAssessment.assessment_number)
-        run = _latest(session, OrchestrationRun, case.id, OrchestrationRun.run_number)
-        decision = _latest(session, HumanDecision, case.id, HumanDecision.decision_number)
-        decision_run = (
-            session.get(OrchestrationRun, decision.orchestration_run_id) if decision else None
+    if not cases:
+        return []
+    case_ids = select(DecisionCaseShell.id).where(DecisionCaseShell.project_id == project.id)
+    impacts = {
+        row.case_id: row
+        for row in session.scalars(
+            _latest_query(ImpactAssessment, case_ids, ImpactAssessment.assessment_number)
         )
-        object_count = (
-            session.scalar(
-                select(func.count())
-                .select_from(DecisionCaseControlledObject)
-                .where(DecisionCaseControlledObject.case_id == case.id)
-            )
-            or 0
+    }
+    runs = {
+        row.case_id: row
+        for row in session.scalars(
+            _latest_query(OrchestrationRun, case_ids, OrchestrationRun.run_number)
         )
-        limitations = list(
-            session.scalars(
-                select(CaseLimitation).where(
-                    CaseLimitation.case_id == case.id, CaseLimitation.status == "OPEN"
+    }
+    decision_query = _latest_query(HumanDecision, case_ids, HumanDecision.decision_number)
+    decisions = {row.case_id: row for row in session.scalars(decision_query)}
+    decision_runs = (
+        {
+            row.id: row
+            for row in session.scalars(
+                select(OrchestrationRun).where(
+                    OrchestrationRun.id.in_(
+                        decision_query.with_only_columns(HumanDecision.orchestration_run_id)
+                    )
                 )
             )
+        }
+        if decisions
+        else {}
+    )
+    object_counts = dict(
+        session.execute(
+            select(DecisionCaseControlledObject.case_id, func.count())
+            .where(DecisionCaseControlledObject.case_id.in_(case_ids))
+            .group_by(DecisionCaseControlledObject.case_id)
+        ).all()
+    )
+    limitation_summary = {
+        row[0]: (row[1], row[2])
+        for row in session.execute(
+            select(CaseLimitation.case_id, func.count(), func.min(CaseLimitation.due_at))
+            .where(CaseLimitation.case_id.in_(case_ids), CaseLimitation.status == "OPEN")
+            .group_by(CaseLimitation.case_id)
         )
-        active_count = (
-            session.scalar(
-                select(func.count())
-                .select_from(CaseActiveResponse)
-                .where(CaseActiveResponse.case_id == case.id, CaseActiveResponse.status == "ACTIVE")
-            )
-            or 0
-        )
-        deadlines = [item.due_at for item in limitations if item.due_at]
+    }
+    active_counts = dict(
+        session.execute(
+            select(CaseActiveResponse.case_id, func.count())
+            .where(CaseActiveResponse.case_id.in_(case_ids), CaseActiveResponse.status == "ACTIVE")
+            .group_by(CaseActiveResponse.case_id)
+        ).all()
+    )
+    items: list[DecisionQueueItem] = []
+    for case in cases:
+        impact = impacts.get(case.id)
+        run = runs.get(case.id)
+        decision = decisions.get(case.id)
+        decision_run = decision_runs.get(decision.orchestration_run_id) if decision else None
+        limitation_count, next_deadline = limitation_summary.get(case.id, (0, None))
         consequence_window = None
         if impact and impact.decision_clocks:
             known = [
@@ -116,9 +152,9 @@ def decision_queue(session: Session, project: Project) -> list[DecisionQueueItem
                 governance_state=case.governance_state,
                 owner_actor_id=case.owner_actor_id,
                 opened_at=case.opened_at,
-                controlled_object_count=object_count,
-                open_limitation_count=len(limitations),
-                active_response_count=active_count,
+                controlled_object_count=object_counts.get(case.id, 0),
+                open_limitation_count=limitation_count,
+                active_response_count=active_counts.get(case.id, 0),
                 recommended_disposition=run.recommended_disposition if run else None,
                 decision_basis_recommendation=(
                     decision_run.recommended_disposition if decision_run else None
@@ -130,7 +166,7 @@ def decision_queue(session: Session, project: Project) -> list[DecisionQueueItem
                 urgency=impact.urgency if impact else None,
                 overall_confidence=str(impact.overall_confidence) if impact else None,
                 consequence_window=consequence_window,
-                next_deadline=min(deadlines) if deadlines else None,
+                next_deadline=next_deadline,
                 next_action=_next_action(case),
             )
         )

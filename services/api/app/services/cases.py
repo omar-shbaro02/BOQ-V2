@@ -165,7 +165,12 @@ def audit_case(
         object_type="DECISION_CASE",
         object_id=str(case.id),
         object_version=case.version,
-        details=details,
+        details={
+            **(details or {}),
+            "governance_state": case.governance_state,
+            "lifecycle": case.lifecycle,
+            "readiness": case.readiness,
+        },
     )
 
 

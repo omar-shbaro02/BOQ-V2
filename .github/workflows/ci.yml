@@ -8,6 +8,21 @@ permissions:
   contents: read
 
 jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: uvx --from pip-audit==2.10.1 pip-audit -r services/api/requirements.lock --no-deps --disable-pip
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+
   contracts-and-api:
     runs-on: ubuntu-latest
     steps:
@@ -17,9 +32,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv venv --python 3.12
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: uv pip install --python .venv/bin/python -r services/api/requirements.lock
       - run: uv pip install --python .venv/bin/python --no-deps -e services/api
       - run: python3 scripts/generate_contracts.py --check
+      - run: python3 scripts/check_secrets.py
       - run: .venv/bin/ruff check services/api scripts
       - run: .venv/bin/ruff format --check services/api scripts
       - run: .venv/bin/pytest
@@ -36,6 +53,26 @@ jobs:
       - run: npm run lint:web
       - run: npm run typecheck:web
       - run: npm run build:web
+
+  browser-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: uv venv --python 3.12
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - run: uv pip install --python .venv/bin/python -r services/api/requirements.lock
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - run: npm run test:browser:oidc
 
   installer-smoke:
     runs-on: ubuntu-latest

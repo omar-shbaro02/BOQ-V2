@@ -20,6 +20,7 @@ from fastapi import (
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import ActorContext, get_actor
 from app.config import get_settings
@@ -140,11 +141,11 @@ async def upload_artifact(
     artifact_id = uuid.uuid4()
     digest = hashlib.sha256(content).hexdigest()
     filename = Path(upload.filename or "evidence.bin").name
-    validate_evidence_type(filename, content)
-    scan = scanner.scan(filename, content)
+    await run_in_threadpool(validate_evidence_type, filename, content)
+    scan = await run_in_threadpool(scanner.scan, filename, content)
     suffix = Path(filename).suffix.lower()[:16]
     storage_key = f"{project.organization_id}/{project.id}/{artifact_id}/{digest}{suffix}"
-    store.put(storage_key, content)
+    await run_in_threadpool(store.put, storage_key, content)
     artifact = EvidenceArtifact(
         id=artifact_id,
         organization_id=project.organization_id,
@@ -187,7 +188,7 @@ async def upload_artifact(
     try:
         commit_or_conflict(session, "Evidence artifact metadata conflicts with existing data")
     except HTTPException:
-        store.delete(storage_key)
+        await run_in_threadpool(store.delete, storage_key)
         raise
     session.refresh(artifact)
     return artifact

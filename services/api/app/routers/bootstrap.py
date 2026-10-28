@@ -24,6 +24,7 @@ from app.bootstrap_schemas import (
     ScheduleApprovalCreate,
     ScheduleCalculationCreate,
     ScheduleCalculationRead,
+    ScheduleDraftCorrectionCreate,
     ScheduleDraftGenerateCreate,
     ScheduleDraftGenerationDetail,
     ScheduleDraftGenerationRead,
@@ -57,6 +58,7 @@ from app.services.bootstrap import (
     normalize_boq_source,
     revise_planning_structure,
 )
+from app.services.bootstrap_corrections import correct_schedule_draft
 from app.services.bootstrap_schedule import (
     approve_schedule,
     calculate_schedule,
@@ -366,7 +368,59 @@ def get_schedule_draft(
     result = ScheduleDraftGenerationRead.model_validate(generation).model_dump()
     result["activities"] = activities
     result["assumptions"] = assumptions
+    structure = session.get(BoqPlanningStructureVersion, generation.planning_structure_id)
+    result["correction_history"] = (
+        structure.change_summary.get("material_correction")
+        if structure and structure.project_id == project.id
+        else None
+    )
+    normalization = (
+        session.get(BoqNormalizationRun, structure.normalization_run_id)
+        if structure and structure.project_id == project.id
+        else None
+    )
+    source = (
+        session.get(BoqSourceVersion, normalization.source_version_id)
+        if normalization and normalization.project_id == project.id
+        else None
+    )
+    result["source_version_id"] = source.id if source and source.project_id == project.id else None
+    result["source_version_number"] = (
+        source.version_number if source and source.project_id == project.id else None
+    )
     return result
+
+
+@router.post(
+    "/schedule-drafts/{generation_id}/corrections",
+    response_model=ScheduleDraftGenerationRead,
+    status_code=201,
+)
+def add_material_correction(
+    project_id: uuid.UUID,
+    generation_id: uuid.UUID,
+    data: ScheduleDraftCorrectionCreate,
+    session: SessionDep,
+    actor: ActorDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
+) -> ScheduleDraftGeneration:
+    project = _project(session, actor, project_id, WRITE_ROLES)
+    generation = session.get(ScheduleDraftGeneration, generation_id)
+    if generation is None or generation.project_id != project.id:
+        raise HTTPException(404, "Schedule draft not found")
+    try:
+        successor = correct_schedule_draft(
+            session, actor, project, generation, data, idempotency_key
+        )
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "Material correction conflicts with existing history") from exc
+    except HTTPException:
+        session.rollback()
+        raise
+    session.refresh(successor)
+    return successor
 
 
 @router.post(

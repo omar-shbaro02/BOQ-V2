@@ -97,6 +97,8 @@ def validate_authority(
     case_id: uuid.UUID,
     data: HumanDecisionCreate,
 ) -> tuple[AuthorityValidationOutcome, AuthorityGrant, dict[str, Any]]:
+    if actor.principal_type != "HUMAN":
+        raise HTTPException(403, "Human principal required for a management decision")
     grant = session.get(AuthorityGrant, data.authority_grant_id)
     if (
         grant is None
@@ -128,9 +130,9 @@ def validate_authority(
             )
         )
     )
-    if grant.controlled_object_id and grant.controlled_object_id not in case_objects:
+    if grant.controlled_object_id and case_objects != {grant.controlled_object_id}:
         raise HTTPException(
-            status_code=403, detail="Authority grant is outside the case object scope"
+            status_code=403, detail="Authority grant does not cover the complete case object scope"
         )
     if data.decision_amount is not None:
         if grant.max_amount is None:
@@ -348,6 +350,8 @@ def authorize_response(
     proposal_id: uuid.UUID,
     data: ResponseAuthorizationCreate,
 ):
+    if actor.principal_type != "HUMAN":
+        raise HTTPException(403, "Human principal required for response authorization")
     case = scoped_case(session, project, case_id, for_update=True)
     require_version(case, data.expected_version)
     proposal = session.get(ResponseProposal, proposal_id)
@@ -392,9 +396,9 @@ def authorize_response(
             )
         )
     )
-    if grant.controlled_object_id and grant.controlled_object_id not in case_objects:
+    if grant.controlled_object_id and case_objects != {grant.controlled_object_id}:
         raise HTTPException(
-            status_code=403, detail="Authority grant is outside the case object scope"
+            status_code=403, detail="Authority grant does not cover the complete case object scope"
         )
     if proposal.requested_amount is not None and (
         grant.max_amount is None

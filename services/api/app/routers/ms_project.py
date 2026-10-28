@@ -14,7 +14,12 @@ from app.services.ms_project_export import (
     extract_pdf_text,
     parse_boq_items,
 )
-from app.services.openai_schedule import build_openai_schedule_workbook, create_openai_schedule
+from app.services.openai_schedule import (
+    build_openai_schedule_workbook,
+    create_openai_schedule,
+    validate_schedule_proposal,
+)
+from app.services.progress_workbook import analyze_progress_workbook
 from app.services.schedule_change_assistant import revise_schedule
 
 router = APIRouter(prefix="/api/v1/ms-project", tags=["ms-project"])
@@ -24,11 +29,30 @@ EXPOSE_HEADERS = ", ".join(
 )
 
 
+@router.post("/analyze-progress")
+async def analyze_progress(
+    schedule: Annotated[UploadFile, File()],
+    as_of: Annotated[date, Form()],
+) -> dict[str, object]:
+    if get_settings().environment not in {"development", "test"}:
+        raise HTTPException(403, "Local workbook preview is unavailable")
+    if not schedule.filename or not schedule.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=422, detail="Progress file must be a VAI XLSX workbook")
+    content = await schedule.read(MAX_UPLOAD + 1)
+    if len(content) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="Progress workbook must be 20 MB or smaller")
+    try:
+        return analyze_progress_workbook(content, as_of)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/generate-ai")
 async def generate_ai_schedule(
     boq: Annotated[UploadFile, File()],
     project_start: Annotated[date, Form()],
     target_finish: Annotated[date | None, Form()] = None,
+    workweek: Annotated[str, Form()] = "MON_SAT",
 ) -> StreamingResponse:
     settings = get_settings()
     if settings.environment not in {"development", "test"}:
@@ -37,6 +61,10 @@ async def generate_ai_schedule(
         raise HTTPException(status_code=422, detail="BOQ must be a PDF")
     if target_finish and target_finish <= project_start:
         raise HTTPException(status_code=422, detail="Target finish must follow project start")
+    working_days_by_code = {"MON_FRI": (0, 1, 2, 3, 4), "MON_SAT": (0, 1, 2, 3, 4, 5)}
+    working_days = working_days_by_code.get(workweek)
+    if working_days is None:
+        raise HTTPException(status_code=422, detail="Workweek must be MON_FRI or MON_SAT")
     boq_bytes = await boq.read(MAX_UPLOAD + 1)
     if len(boq_bytes) > MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="BOQ must be 20 MB or smaller")
@@ -55,8 +83,21 @@ async def generate_ai_schedule(
             model=settings.openai_schedule_model,
             project_start=project_start,
             target_finish=target_finish,
+            working_days=working_days,
         )
-        content = build_openai_schedule_workbook(tasks)
+        qa_status, findings, coverage = validate_schedule_proposal(
+            tasks,
+            items,
+            working_days,
+            project_start,
+            target_finish,
+        )
+        content = build_openai_schedule_workbook(
+            tasks,
+            coverage=coverage,
+            findings=findings,
+            qa_status=qa_status,
+        )
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return StreamingResponse(
@@ -66,7 +107,11 @@ async def generate_ai_schedule(
             "Content-Disposition": 'attachment; filename="ai_boq_schedule.xlsx"',
             "X-VAI-Task-Count": str(len(tasks)),
             "X-VAI-Model": settings.openai_schedule_model,
-            "Access-Control-Expose-Headers": "X-VAI-Task-Count, X-VAI-Model",
+            "X-VAI-QA-Status": qa_status,
+            "X-VAI-QA-Finding-Count": str(len(findings)),
+            "Access-Control-Expose-Headers": (
+                "X-VAI-Task-Count, X-VAI-Model, X-VAI-QA-Status, X-VAI-QA-Finding-Count"
+            ),
         },
     )
 

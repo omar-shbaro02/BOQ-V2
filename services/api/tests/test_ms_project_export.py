@@ -6,8 +6,17 @@ from datetime import date
 
 import httpx
 import pytest
-from app.services.ms_project_export import HEADERS, build_ms_project_workbook, parse_boq_items
-from app.services.openai_schedule import build_openai_schedule_workbook, create_openai_schedule
+from app.services.ms_project_export import (
+    HEADERS,
+    BoqItem,
+    build_ms_project_workbook,
+    parse_boq_items,
+)
+from app.services.openai_schedule import (
+    build_openai_schedule_workbook,
+    create_openai_schedule,
+    validate_schedule_proposal,
+)
 from openpyxl import Workbook, load_workbook
 
 
@@ -67,6 +76,13 @@ def test_non_boq_pdf_text_has_an_actionable_error() -> None:
         raise AssertionError("Non-BOQ content was incorrectly accepted")
 
 
+def test_boq_parser_preserves_part_chapter_and_section_context() -> None:
+    text = "PART II\nCHAPTER MECHANICAL\nSECTION HEATING\n1.1 Supply boilers  No. 2\n"
+    item = parse_boq_items(text)[0]
+    assert item.reference == "p1:1.1"
+    assert item.hierarchy == ("PART II", "CHAPTER MECHANICAL", "SECTION HEATING")
+
+
 def test_layout_only_leaves_all_planning_fields_blank() -> None:
     content, _ = build_ms_project_workbook(
         "1.1 Lay asphalt surface  m2  30",
@@ -122,7 +138,7 @@ def test_openai_schedule_export_uses_only_six_column_tasks_sheet() -> None:
         ],
     )
     workbook = load_workbook(io.BytesIO(content), read_only=True)
-    assert workbook.sheetnames == ["Tasks"]
+    assert workbook.sheetnames == ["Progress Report", "Tasks"]
     assert list(workbook["Tasks"].values) == [
         HEADERS,
         (1, "Mobilization", "10 days", "2026-10-01", "2026-10-10", None),
@@ -133,7 +149,10 @@ def test_openai_schedule_export_uses_only_six_column_tasks_sheet() -> None:
 def test_openai_schedule_timeout_returns_an_actionable_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def raise_timeout(*_args: object, **_kwargs: object) -> None:
+    request_body: dict[str, object] = {}
+
+    async def raise_timeout(*_args: object, **kwargs: object) -> None:
+        request_body.update(kwargs["json"])  # type: ignore[arg-type]
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
         raise httpx.ReadTimeout("response exceeded timeout", request=request)
 
@@ -148,6 +167,96 @@ def test_openai_schedule_timeout_returns_an_actionable_error(
                 target_finish=None,
             )
         )
+    assert request_body["reasoning"] == {"effort": "minimal"}
+    assert request_body["max_output_tokens"] == 16000
+    assert request_body["text"] == {
+        "verbosity": "low",
+        "format": request_body["text"]["format"],  # type: ignore[index]
+    }
+
+
+def _governed_task(
+    task_id: int,
+    name: str,
+    references: list[str],
+    predecessors: list[int],
+) -> dict[str, object]:
+    return {
+        "id": task_id,
+        "name": name,
+        "duration_days": 2,
+        "start": "2026-10-12",
+        "finish": "2026-10-13",
+        "relationships": [
+            {"predecessor_id": value, "type": "FS", "lag_days": 0, "basis": "Physical sequence"}
+            for value in predecessors
+        ],
+        "boq_references": references,
+        "scope_type": "BOQ_REQUIREMENT" if references else "EXECUTION_SUPPORT",
+        "duration_basis": "DOCUMENTED_PROJECT_INPUT",
+        "duration_note": "Planner supplied duration",
+    }
+
+
+def test_schedule_qa_blocks_missing_and_duplicate_boq_coverage() -> None:
+    items = [
+        BoqItem("1.1", "Excavation", "m3", None, 1),
+        BoqItem("1.2", "Backfill", "m3", None, 1),
+    ]
+    tasks = [
+        _governed_task(1, "Excavation", ["p1:1.1"], []),
+        _governed_task(2, "Duplicate excavation scope", ["p1:1.1"], [1]),
+    ]
+    status, findings, coverage = validate_schedule_proposal(tasks, items)
+    assert status == "BLOCKED"
+    assert any("not allocated" in finding.issue for finding in findings)
+    assert any("more than once" in finding.issue for finding in findings)
+    assert [item["coverage_status"] for item in coverage] == ["Requires Clarification", "Missing"]
+
+
+def test_schedule_qa_blocks_backfill_without_below_grade_waterproofing_gate() -> None:
+    tasks = [
+        _governed_task(1, "Below-grade waterproofing", [], []),
+        _governed_task(2, "Unrelated concrete work", [], [1]),
+        _governed_task(3, "Backfilling", [], [2]),
+    ]
+    tasks[2]["relationships"] = []
+    status, findings, _ = validate_schedule_proposal(tasks, [])
+    assert status == "BLOCKED"
+    assert any("waterproofing is not a predecessor" in finding.issue for finding in findings)
+
+
+def test_schedule_qa_blocks_material_boq_system_without_distinct_activity() -> None:
+    items = [BoqItem("1.1", "Supply two heating boilers", "No.", None, 4)]
+    tasks = [_governed_task(1, "General mechanical works", ["p4:1.1"], [])]
+    status, findings, _ = validate_schedule_proposal(tasks, items)
+    assert status == "BLOCKED"
+    assert any("Heating system" in finding.issue for finding in findings)
+
+
+def test_governed_workbook_keeps_import_sheet_and_adds_review_evidence() -> None:
+    tasks = [_governed_task(1, "Mobilization", [], [])]
+    status, findings, coverage = validate_schedule_proposal(tasks, [])
+    content = build_openai_schedule_workbook(
+        tasks,
+        coverage=coverage,
+        findings=findings,
+        qa_status=status,
+    )
+    workbook = load_workbook(io.BytesIO(content), read_only=True)
+    assert workbook.sheetnames == ["Progress Report", "Tasks", "BOQ Coverage", "QA Review"]
+    assert tuple(next(workbook["Tasks"].values)) == HEADERS
+    assert workbook["QA Review"]["B1"].value == status
+    progress = list(workbook["Progress Report"].values)
+    assert progress[3][1:7] == (
+        "Task ID",
+        "Task Name",
+        "Proposed Duration",
+        "Planned Start",
+        "Planned Finish",
+        "Work Complete %",
+    )
+    assert progress[4][1:6] == (1, "Mobilization", "2 days", "2026-10-12", "2026-10-13")
 
 
 def test_customer_ai_endpoint_accepts_neither_api_key_nor_template() -> None:

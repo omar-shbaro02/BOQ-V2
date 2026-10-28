@@ -1,0 +1,23 @@
+* { box-sizing: border-box; }
+body { margin: 0; color: #222; background: #ece9e7; font-family: Arial, sans-serif; }
+nav { position: sticky; top: 0; display: flex; gap: 24px; padding: 14px 28px; background: #fff; z-index: 2; font-size: 16px; }
+button, a { font: inherit; color: #6e1e36; }
+button { background: #fff; border: 1px solid #6e1e36; padding: 6px 14px; }
+.slide { position: relative; width: min(1280px,100%); min-height: 720px; margin: 24px auto; padding: 52px 72px 112px; background: #fff; }
+h1 { margin: 0 0 38px; color: #6e1e36; font-size: 44px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+.body { font-size: 24px; line-height: 1.28; }
+.body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+footer { position: absolute; bottom: 28px; left: 72px; right: 72px; font-size: 16px; line-height: 1.25; color: #555; }
+@media (max-width: 700px) {
+  .slide { padding: 32px 24px 96px; }
+  .body { font-size: 20px; }
+  h1 { font-size: 32px; }
+  footer { left: 24px; right: 24px; }
+}
+@media print {
+  @page { size: 13.333in 7.5in; margin: 0; }
+  body { background: #fff; }
+  nav { display: none; }
+  .slide { width: 1280px; height: 720px; margin: 0; break-after: page; break-inside: avoid; }
+  .slide:last-of-type { break-after: auto; }
+}

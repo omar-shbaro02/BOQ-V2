@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.archive_limits import load_workbook
 from app.auth import ActorContext
 from app.evidence_schemas import (
     ContradictionCreate,
@@ -24,6 +25,7 @@ from app.generated.taxonomies import (
     EvidenceRelationType,
     EvidenceRequestStatus,
     ImportBatchStatus,
+    ProjectRole,
     SemanticState,
     TruthType,
     VerificationOutcome,
@@ -41,10 +43,10 @@ from app.models import (
     SourceReliabilityAssessment,
     VerificationEvent,
 )
+from app.services.access import require_project_roles
 from app.services.audit import record_audit
 from app.storage import EvidenceStore
 from fastapi import HTTPException
-from openpyxl import load_workbook
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -80,12 +82,27 @@ def scoped_item(session: Session, project: Project, item_id: uuid.UUID) -> Evide
     return item
 
 
+def require_human_verifier(session: Session, actor: ActorContext, project: Project) -> None:
+    if actor.principal_type != "HUMAN":
+        raise HTTPException(403, "Verified evidence requires a human verifier")
+    roles = require_project_roles(session, actor, project, set(ProjectRole))
+    if ProjectRole.SYSTEM_SERVICE in roles or not roles.intersection(
+        {ProjectRole.ORGANIZATION_ADMIN, ProjectRole.PROJECT_ADMIN, ProjectRole.VERIFIER}
+    ):
+        raise HTTPException(403, "Verified evidence requires a human verifier")
+
+
 def create_evidence_item(
     session: Session,
     actor: ActorContext,
     project: Project,
     data: EvidenceItemCreate,
 ) -> EvidenceItem:
+    if data.semantic_state == SemanticState.VERIFIED or data.truth_type in {
+        TruthType.VERIFIED_FACT,
+        TruthType.CORROBORATED_FACT,
+    }:
+        require_human_verifier(session, actor, project)
     if data.artifact_id:
         scoped_artifact(session, project, data.artifact_id)
     if data.controlled_object_id:
@@ -170,6 +187,7 @@ def verify_item(
     item_id: uuid.UUID,
     data: VerificationCreate,
 ) -> VerificationEvent:
+    require_human_verifier(session, actor, project)
     source = scoped_item(session, project, item_id)
     result: EvidenceItem | None = None
     if data.outcome == VerificationOutcome.VERIFIED:

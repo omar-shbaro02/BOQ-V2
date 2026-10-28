@@ -12,8 +12,8 @@ from html import escape
 from typing import Any
 
 import httpx
+from app.archive_limits import load_workbook
 from app.services.ms_project_export import HEADERS
-from openpyxl import load_workbook
 
 RESPONSES_URL = "https://api.openai.com/v1/responses"
 PROMPT_VERSION = "1.1.0"

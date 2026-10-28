@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ProgressWorkbench } from "./progress-workbench";
+import { SnapshotComposer } from "./snapshot-composer";
 
 export default function ProgressPage() {
   return (
@@ -10,15 +11,16 @@ export default function ProgressPage() {
       </Link>
       <section className="workbench-heading">
         <div>
-          <div className="eyebrow">Phase 5 · progress truth</div>
-          <h1 className="workbench-title">Progress Reconciliation</h1>
+          <div className="eyebrow">Schedule reporting · progress truth</div>
+          <h1 className="workbench-title">Project Progress</h1>
         </div>
         <p>
-          Normalize evidence-backed progress without collapsing reported, executed, verified, or
-          accepted gates. Comparisons require compatible bases and authorized plan lineage.
+          Update the generated Excel workbook, upload it here, and see what is early, on time, late,
+          or still missing. Deadline impact remains a visible planning scenario until reviewed.
         </p>
       </section>
       <ProgressWorkbench />
+      <SnapshotComposer />
     </main>
   );
 }

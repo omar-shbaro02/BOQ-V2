@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { currentIdentity, currentWorkspace } from "../workspace-session";
+import { ProjectControls } from "./project-controls";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 const LOCAL_ACTOR = "local-admin";
@@ -16,14 +18,13 @@ export function SetupForm() {
   const [result, setResult] = useState<CreatedProject | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [production, setProduction] = useState(false);
 
   useEffect(() => {
     async function initialize() {
       await Promise.resolve();
-      const saved = localStorage.getItem(WORKSPACE_KEY) ?? sessionStorage.getItem(WORKSPACE_KEY);
-      if (saved) {
-        try { setWorkspace(JSON.parse(saved) as Workspace); } catch { localStorage.removeItem(WORKSPACE_KEY); }
-      }
+      try { const identity = await currentIdentity(); setProduction(identity.mode === "OIDC"); setWorkspace(await currentWorkspace()); }
+      catch (cause) { setProduction(true); setError(cause instanceof Error ? cause.message : "Identity service is unavailable."); }
       setReady(true);
     }
     void initialize();
@@ -39,6 +40,7 @@ export function SetupForm() {
     try {
       let active = workspace;
       if (!active) {
+        if (production) throw new Error("Sign in with a provisioned organization before creating a project.");
         const organizationName = String(form.get("organizationName"));
         const organizationResponse = await fetch(`${API_URL}/api/v1/organizations`, {
           method: "POST",
@@ -65,7 +67,8 @@ export function SetupForm() {
         }),
       });
       if (!projectResponse.ok) throw new Error(await readError(projectResponse));
-      const project = await projectResponse.json() as { code: string; name: string };
+      const project = await projectResponse.json() as { id: string; code: string; name: string };
+      localStorage.setItem("vai-active-project", project.id);
       setResult({ code: project.code, name: project.name });
       formElement.reset();
     } catch (caught) {
@@ -77,12 +80,12 @@ export function SetupForm() {
 
   if (!ready) return <p className="form-message">Loading project workspace…</p>;
 
-  return <form className="setup-form project-create-form" onSubmit={submit}>
+  return <><form className="setup-form project-create-form" onSubmit={submit}>
     <div className="setup-form-heading">
       <div><span className="workspace-step">1</span><div><h2>Project details</h2><p>{workspace?.organizationName ? `Adding to ${workspace.organizationName}` : "Create your local workspace and first project."}</p></div></div>
-      <Link href="/bootstrap">Back to BOQ workspace</Link>
+      <Link href="/">Command center</Link>
     </div>
-    {!workspace ? <fieldset>
+    {!workspace && !production ? <fieldset>
       <legend>Workspace</legend>
       <label>Company or workspace name<input name="organizationName" placeholder="Example Construction" required minLength={2} /></label>
     </fieldset> : null}
@@ -95,10 +98,10 @@ export function SetupForm() {
       <label>Delivery model<select name="deliveryModel" defaultValue="DESIGN_BID_BUILD"><option value="DESIGN_BID_BUILD">Design–bid–build</option><option value="DESIGN_BUILD">Design–build</option><option value="CONSTRUCTION_MANAGEMENT">Construction management</option></select></label>
       <label>Reporting cadence<select name="reportingCadence" defaultValue="WEEKLY"><option value="WEEKLY">Weekly</option><option value="BIWEEKLY">Every two weeks</option><option value="MONTHLY">Monthly</option></select></label>
     </fieldset>
-    <div className="setup-submit-row"><div><strong>Ready to create</strong><span>You can add the BOQ from the schedule workspace next.</span></div><button disabled={submitting} type="submit">{submitting ? "Creating project…" : "Create project"}</button></div>
+    <div className="setup-submit-row"><div><strong>Ready to create</strong><span>You can add the BOQ from the schedule workspace next.</span></div><button disabled={submitting || (production && !workspace)} type="submit">{submitting ? "Creating project…" : "Create project"}</button></div>
     {error ? <p className="form-message error" role="alert">{error}</p> : null}
     {result ? <div className="form-message success" role="status"><strong>{result.code} · {result.name} created</strong><span>The project is ready to use in the BOQ workspace.</span><Link href="/bootstrap">Open BOQ workspace →</Link></div> : null}
-  </form>;
+  </form><ProjectControls key={result ? `${result.code}-${result.name}` : "existing-projects"} /></>;
 }
 
 function workspaceSlug(name: string) {

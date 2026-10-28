@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DecisionCenterModel(BaseModel):
@@ -48,6 +48,64 @@ class GovernedReport(DecisionCenterModel):
     content_hash: str
     fidelity_manifest: dict[str, Any]
     payload: dict[str, Any]
+
+
+class ReportSnapshotCreate(DecisionCenterModel):
+    report_type: str = Field(
+        pattern=r"^(WEEKLY_DECISION_BRIEF|MONTHLY_EXECUTIVE_REPORT|PROJECT_CONTROL_EXCEPTION_REPORT|ON_DEMAND_STATUS_REPORT|CASE_DOSSIER|PILOT_KPI_REPORT|GOVERNANCE_CONFORMITY_REPORT)$"
+    )
+    project_control_snapshot_id: uuid.UUID
+    case_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def case_scope(self) -> ReportSnapshotCreate:
+        if (self.report_type == "CASE_DOSSIER") != (self.case_id is not None):
+            raise ValueError("Only CASE_DOSSIER requires case_id")
+        return self
+
+
+class ReportLifecycleCreate(DecisionCenterModel):
+    to_status: str = Field(pattern=r"^(REVIEWED|APPROVED)$")
+    reason: str = Field(min_length=3)
+    authority_grant_id: uuid.UUID | None = None
+
+
+class ReportLifecycleRead(DecisionCenterModel):
+    id: uuid.UUID
+    report_snapshot_id: uuid.UUID
+    event_number: int
+    from_status: str | None
+    to_status: str
+    reason: str
+    authority_grant_id: uuid.UUID | None
+    actor_id: str
+    occurred_at: datetime
+
+
+class ReportSnapshotRead(DecisionCenterModel):
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    project_id: uuid.UUID
+    project_control_snapshot_id: uuid.UUID
+    case_id: uuid.UUID | None
+    report_number: int
+    report_type: str
+    schema_version: str
+    report_date: datetime
+    data_date: datetime
+    payload: dict[str, Any]
+    source_refs: dict[str, Any]
+    policy_versions: dict[str, Any]
+    generator_version: str
+    semantic_notice: str
+    content_hash: str
+    fidelity_manifest: dict[str, Any]
+    idempotency_key: str
+    request_hash: str
+    generated_by: str
+    generated_at: datetime
+    lifecycle_status: str
+    lifecycle_events: list[ReportLifecycleRead]
 
 
 class ReviewQueueEntry(DecisionCenterModel):

@@ -21,6 +21,7 @@ from app.models import (
     ScheduleAssessment,
 )
 from app.storage import LocalEvidenceStore, get_evidence_store
+from context_helpers import activate_with_authority
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -218,7 +219,8 @@ def activate_progress_schedule(
         },
     )
     assert source.status_code == 201, source.text
-    activated = client.post(
+    activated = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={
@@ -279,7 +281,8 @@ def activate_schedule_network(
         },
     )
     assert source.status_code == 201, source.text
-    activated = client.post(
+    activated = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={
@@ -438,7 +441,8 @@ def activate_budget(
         },
     )
     assert source.status_code == 201, source.text
-    activated = client.post(
+    activated = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={
@@ -717,7 +721,8 @@ def activate_schedule(
             },
         },
     )
-    activated = client.post(
+    activated = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={
@@ -1969,7 +1974,8 @@ def test_boq_value_requires_exact_authorized_revision_lineage(
         },
     )
     assert source.status_code == 201, source.text
-    activated = client.post(
+    activated = activate_with_authority(
+        client,
         f"/api/v1/projects/{project_id}/authorized-context/activate",
         headers=headers,
         json={

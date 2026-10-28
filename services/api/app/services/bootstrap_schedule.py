@@ -41,12 +41,14 @@ from app.models import (
     ScheduleLogicProposal,
 )
 from app.services.audit import record_audit
+from app.services.bootstrap_controls import apply_control_inputs, validate_stored_controls
 from fastapi import HTTPException
 from openpyxl import Workbook
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pydantic import ValidationError
+from sqlalchemy import exists, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
-CALCULATION_VERSION = "1.0.0"
+CALCULATION_VERSION = "1.1.0"
 DELTA_VERSION = "1.0.0"
 
 
@@ -80,6 +82,20 @@ def _working_date(calendar: dict[str, Any], workdays: list[date], index: int) ->
         if cursor.weekday() in weekdays and cursor not in holidays:
             remaining -= 1
     return cursor
+
+
+def _finish_index(calendar: dict[str, Any], workdays: list[date], target: date) -> int:
+    """Index the last working day on/before a deadline, including pre-start dates."""
+    if target >= workdays[0]:
+        return bisect_right(workdays, target) - 1
+    weekdays = set(calendar["working_weekdays"])
+    weeks, remainder = divmod((workdays[0] - target).days, 7)
+    count = weeks * len(weekdays) + sum(
+        (target.weekday() + offset) % 7 in weekdays for offset in range(1, remainder + 1)
+    )
+    holidays = {date.fromisoformat(value) for value in calendar.get("holidays", [])}
+    count -= sum(target < day <= workdays[0] and day.weekday() in weekdays for day in holidays)
+    return -count
 
 
 def _finding(
@@ -185,6 +201,16 @@ def calculate_schedule(
             )
 
     generation = session.get(ScheduleDraftGeneration, logic.generation_id)
+    if generation and any(
+        item.get("code") == "PACKAGE_QUANTITY_NOT_AGGREGATABLE" for item in generation.warnings
+    ):
+        findings.append(
+            _finding(
+                "INCOMPATIBLE_BOQ_ALLOCATION_UNITS",
+                "BLOCKER",
+                "BOQ quantities in a work package use incompatible or incomplete units",
+            )
+        )
     structure = (
         session.get(BoqPlanningStructureVersion, generation.planning_structure_id)
         if generation
@@ -207,6 +233,59 @@ def calculate_schedule(
                     "UNMAPPED_OR_SUMMARY_CONTAMINATION",
                     "BLOCKER",
                     "Proposed activity references BOQ lines outside reviewed schedulable mappings",
+                )
+            )
+        primary_allocations: dict[str, list[dict[str, Any]]] = {}
+        for activity in activities:
+            for allocation in activity.boq_allocations:
+                if allocation.get("primary_counting"):
+                    primary_allocations.setdefault(allocation["boq_line_id"], []).append(allocation)
+        invalid_allocations = []
+        for line_id in expected_lines:
+            allocations = primary_allocations.get(line_id, [])
+            percent = sum(
+                (Decimal(str(item.get("allocation_percent") or "0")) for item in allocations),
+                Decimal("0"),
+            )
+            if len(allocations) != 1 or percent != Decimal("1"):
+                invalid_allocations.append(line_id)
+        if invalid_allocations:
+            findings.append(
+                _finding(
+                    "INVALID_BOQ_ACTIVITY_ALLOCATION",
+                    "BLOCKER",
+                    "Each mapped BOQ line requires exactly one 100% "
+                    "primary-counting activity allocation",
+                    sorted(invalid_allocations),
+                )
+            )
+        boq_lines = list(
+            session.scalars(
+                select(BoqLine).where(
+                    BoqLine.normalization_run_id == structure.normalization_run_id
+                )
+            )
+        )
+        blocking_boq_codes = {
+            "BOQ_AMOUNT_MISMATCH",
+            "INVALID_NEGATIVE_COMMERCIAL_VALUE",
+            "DUPLICATE_STABLE_BOQ_LINE",
+            "CURRENCY_DIFFERS_FROM_PROJECT_CONTEXT",
+            "INCONSISTENT_GRAND_TOTAL",
+        }
+        unresolved = [
+            {"boq_line_id": str(line.id), "warning": warning}
+            for line in boq_lines
+            for warning in line.warnings
+            if warning.get("code") in blocking_boq_codes
+        ]
+        if unresolved:
+            findings.append(
+                _finding(
+                    "UNRESOLVED_BOQ_COMMERCIAL_INTEGRITY",
+                    "BLOCKER",
+                    "BOQ arithmetic, currency, sign, or duplicate findings require review",
+                    [item["boq_line_id"] for item in unresolved],
                 )
             )
 
@@ -409,7 +488,7 @@ def calculate_schedule(
             if not milestone.get("material", True):
                 continue
             target = date.fromisoformat(milestone["target_date"])
-            deadline_index = bisect_right(calendar_days, target) - 1
+            deadline_index = _finish_index(logic.calendar, calendar_days, target)
             for feeder_id in milestone["feeds_from_activity_ids"]:
                 milestone_finish_caps[feeder_id] = min(
                     milestone_finish_caps.get(feeder_id, project_finish_index),
@@ -418,6 +497,20 @@ def calculate_schedule(
         for activity_id in reversed(order):
             duration = durations[activity_id]
             finish_index = milestone_finish_caps.get(activity_id, project_finish_index)
+            for constraint in logic.constraints:
+                if constraint["activity_id"] != activity_id:
+                    continue
+                target = date.fromisoformat(constraint["constraint_date"])
+                kind = constraint["constraint_type"]
+                if kind in {"MUST_FINISH_ON", "FINISH_NO_LATER_THAN"}:
+                    finish_index = min(
+                        finish_index, _finish_index(logic.calendar, calendar_days, target)
+                    )
+                elif kind == "MUST_START_ON":
+                    finish_index = min(
+                        finish_index,
+                        _finish_index(logic.calendar, calendar_days, target) + duration - 1,
+                    )
             for dependency in successors[activity_id]:
                 successor = dependency["successor_activity_id"]
                 lag = int(Decimal(str(dependency["lag_working_days"])))
@@ -494,7 +587,7 @@ def calculate_schedule(
                     logic.calendar, workdays, late_finish[activity_id]
                 ).isoformat(),
                 "total_float_working_days": str(total_float),
-                "free_float_working_days": str(max(0, free_float)),
+                "free_float_working_days": str(max(0, min(total_float, free_float))),
                 "critical": critical,
                 "near_critical": 0 < total_float <= 5,
             }
@@ -708,6 +801,36 @@ def _schedule_payload(
     return payload
 
 
+def _require_current_planning_version(
+    session: Session, generation_id: uuid.UUID, project_id: uuid.UUID
+) -> None:
+    structure = session.scalar(
+        select(BoqPlanningStructureVersion)
+        .join(
+            ScheduleDraftGeneration,
+            ScheduleDraftGeneration.planning_structure_id == BoqPlanningStructureVersion.id,
+        )
+        .where(
+            ScheduleDraftGeneration.id == generation_id,
+            ScheduleDraftGeneration.project_id == project_id,
+            BoqPlanningStructureVersion.project_id == project_id,
+        )
+    )
+    if structure is not None:
+        latest = session.scalar(
+            select(BoqPlanningStructureVersion.id)
+            .where(
+                BoqPlanningStructureVersion.normalization_run_id == structure.normalization_run_id
+            )
+            .order_by(BoqPlanningStructureVersion.version_number.desc())
+            .limit(1)
+        )
+        if latest != structure.id:
+            raise HTTPException(
+                409, "Planning inputs changed; recalculate and review the latest draft"
+            )
+
+
 def review_schedule(
     session: Session,
     actor: ActorContext,
@@ -716,7 +839,11 @@ def review_schedule(
     data: ScheduleReviewCreate,
     idempotency_key: str,
 ) -> BootstrapScheduleRelease:
-    request_hash = _digest({"calculation_id": str(calculation.id), **data.model_dump(mode="json")})
+    session.execute(select(Project.id).where(Project.id == project.id).with_for_update())
+    request = data.model_dump(mode="json")
+    if not data.control_inputs:
+        request.pop("control_inputs")
+    request_hash = _digest({"calculation_id": str(calculation.id), **request})
     existing = session.scalar(
         select(BootstrapScheduleRelease).where(
             BootstrapScheduleRelease.project_id == project.id,
@@ -731,7 +858,18 @@ def review_schedule(
         raise HTTPException(
             status_code=409, detail="Blocking validation findings prevent planner review"
         )
+    _require_current_planning_version(session, calculation.generation_id, project.id)
     payload = _schedule_payload(session, calculation)
+    previous_context = session.scalar(
+        select(AuthorizedContextVersion.id).where(
+            AuthorizedContextVersion.project_id == project.id,
+            AuthorizedContextVersion.context_type == AuthorizedContextType.SCHEDULE,
+            AuthorizedContextVersion.semantic_state == SemanticState.CURRENT_AUTHORIZED,
+        )
+    )
+    payload["authorization_predecessor_context_id"] = (
+        str(previous_context) if previous_context else None
+    )
     edit_history = []
     activities = {item["code"]: item for item in payload["activities"]}
     for edit in data.edits:
@@ -758,13 +896,42 @@ def review_schedule(
                 "recorded_at": datetime.now(UTC).isoformat(),
             }
         )
+    for control in data.control_inputs:
+        for edit in data.edits:
+            if (
+                edit.field_path == f"activities.{control.activity_code}.progress_basis"
+                and edit.revised_value != control.measurement_basis
+            ):
+                raise HTTPException(
+                    422, "Control binding conflicts with the reviewed progress basis"
+                )
+    for change in apply_control_inputs(session, project, payload, data.control_inputs):
+        edit_history.append(
+            {**change, "actor_id": actor.actor_id, "recorded_at": datetime.now(UTC).isoformat()}
+        )
+    from app.schemas import SchedulePayload
+
+    try:
+        SchedulePayload.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(422, "Reviewed schedule payload is invalid") from exc
+    release_id = uuid.uuid4()
+    payload["bootstrap_lineage"]["reviewed_release_id"] = str(release_id)
     release = BootstrapScheduleRelease(
-        id=uuid.uuid4(),
+        id=release_id,
         organization_id=project.organization_id,
         project_id=project.id,
         calculation_id=calculation.id,
         supersedes_release_id=None,
-        version_number=1,
+        version_number=(
+            session.scalar(
+                select(func.max(BootstrapScheduleRelease.version_number)).where(
+                    BootstrapScheduleRelease.calculation_id == calculation.id
+                )
+            )
+            or 0
+        )
+        + 1,
         state=BootstrapReadiness.PM_APPROVAL_REQUIRED,
         schedule_payload=payload,
         edit_history=edit_history,
@@ -790,6 +957,32 @@ def review_schedule(
     return release
 
 
+def _approved_baseline_id(session: Session, project: Project, now: datetime) -> uuid.UUID | None:
+    child = aliased(AuthorizedContextVersion)
+    return session.scalar(
+        select(AuthorizedContextVersion.id)
+        .where(
+            AuthorizedContextVersion.project_id == project.id,
+            AuthorizedContextVersion.context_type == AuthorizedContextType.SCHEDULE,
+            AuthorizedContextVersion.semantic_state == SemanticState.BASELINE,
+            AuthorizedContextVersion.effective_from <= now,
+            or_(
+                AuthorizedContextVersion.activated_at <= now,
+                exists().where(
+                    child.source_version_id == AuthorizedContextVersion.id,
+                    child.project_id == project.id,
+                    child.activated_at <= now,
+                    child.semantic_state.in_(
+                        [SemanticState.CURRENT_AUTHORIZED, SemanticState.SUPERSEDED]
+                    ),
+                ),
+            ),
+        )
+        .order_by(AuthorizedContextVersion.version_number.desc())
+        .limit(1)
+    )
+
+
 def approve_schedule(
     session: Session,
     actor: ActorContext,
@@ -798,6 +991,9 @@ def approve_schedule(
     data: ScheduleApprovalCreate,
     idempotency_key: str,
 ) -> BootstrapScheduleRelease:
+    if actor.principal_type != "HUMAN":
+        raise HTTPException(403, "Human principal required for schedule approval")
+    session.execute(select(Project.id).where(Project.id == project.id).with_for_update())
     request_hash = _digest({"release_id": str(release.id), **data.model_dump(mode="json")})
     existing = session.scalar(
         select(BootstrapScheduleRelease).where(
@@ -828,15 +1024,22 @@ def approve_schedule(
         or not grant.active
         or grant.actor_id != actor.actor_id
         or grant.authority_type != required_type
+        or grant.controlled_object_id is not None
+        or grant.max_amount is not None
         or (grant.valid_from and today < grant.valid_from)
         or (grant.valid_until and today > grant.valid_until)
     ):
         raise HTTPException(
             status_code=403, detail="Active matching schedule authority grant denied"
         )
+    calculation = session.get(BootstrapScheduleCalculation, release.calculation_id)
+    if calculation is None:
+        raise HTTPException(409, "Release calculation lineage is unavailable")
+    _require_current_planning_version(session, calculation.generation_id, project.id)
     payload = deepcopy(release.schedule_payload)
+    validate_stored_controls(session, project, payload)
     typed_payload = {
-        key: payload[key]
+        key: deepcopy(payload[key])
         for key in (
             "data_date",
             "network_complete",
@@ -860,6 +1063,14 @@ def approve_schedule(
     from app.schemas import SchedulePayload
 
     SchedulePayload.model_validate(typed_payload)
+    typed_payload["bootstrap_lineage"] = {
+        "calculation_id": str(calculation.id),
+        "generation_id": str(calculation.generation_id),
+        "logic_proposal_id": str(calculation.logic_proposal_id),
+        "input_hash": calculation.input_hash,
+        "reviewed_release_id": str(release.id),
+    }
+    typed_payload["bootstrap_control_inputs"] = payload.get("bootstrap_control_inputs", [])
     now = datetime.now(UTC)
     current = session.scalar(
         select(AuthorizedContextVersion)
@@ -870,29 +1081,65 @@ def approve_schedule(
         )
         .with_for_update()
     )
+    if (str(current.id) if current else None) != release.schedule_payload.get(
+        "authorization_predecessor_context_id"
+    ):
+        raise HTTPException(
+            409, "Authorized schedule changed since planner review; review it again"
+        )
     if current:
         current.semantic_state = SemanticState.SUPERSEDED
         current.superseded_at = now
+        session.flush()
+    next_context_version = (
+        session.scalar(
+            select(func.max(AuthorizedContextVersion.version_number)).where(
+                AuthorizedContextVersion.project_id == project.id,
+                AuthorizedContextVersion.context_type == AuthorizedContextType.SCHEDULE,
+            )
+        )
+        or 0
+    ) + 1
+    source_id = uuid.uuid4()
+    baseline_id = (
+        source_id if data.authorize_as_baseline else _approved_baseline_id(session, project, now)
+    )
+    authorization_lineage = {
+        "source_context_id": str(source_id),
+        "baseline_context_id": str(baseline_id) if baseline_id else None,
+    }
+    typed_payload["authorization_lineage"] = authorization_lineage
+    source = AuthorizedContextVersion(
+        id=source_id,
+        organization_id=project.organization_id,
+        project_id=project.id,
+        context_type=AuthorizedContextType.SCHEDULE,
+        version_number=next_context_version,
+        semantic_state=SemanticState.BASELINE
+        if data.authorize_as_baseline
+        else SemanticState.PROPOSED,
+        effective_from=now,
+        payload=deepcopy(typed_payload),
+        created_by=release.created_by,
+        approval_reference=data.approval_reference if data.authorize_as_baseline else None,
+        activation_reason=data.reason if data.authorize_as_baseline else None,
+        activated_by=actor.actor_id if data.authorize_as_baseline else None,
+        activated_at=now if data.authorize_as_baseline else None,
+    )
+    session.add(source)
+    session.flush([source])
+    payload["authorization_lineage"] = authorization_lineage
     context = AuthorizedContextVersion(
         id=uuid.uuid4(),
         organization_id=project.organization_id,
         project_id=project.id,
         context_type=AuthorizedContextType.SCHEDULE,
-        version_number=(
-            session.scalar(
-                select(func.max(AuthorizedContextVersion.version_number)).where(
-                    AuthorizedContextVersion.project_id == project.id,
-                    AuthorizedContextVersion.context_type == AuthorizedContextType.SCHEDULE,
-                )
-            )
-            or 0
-        )
-        + 1,
+        version_number=next_context_version + 1,
         semantic_state=SemanticState.CURRENT_AUTHORIZED,
         effective_from=now,
         payload=typed_payload,
         created_by=release.created_by,
-        source_version_id=None,
+        source_version_id=source.id,
         approval_reference=data.approval_reference,
         activation_reason=data.reason,
         activated_by=actor.actor_id,
@@ -905,7 +1152,15 @@ def approve_schedule(
         project_id=project.id,
         calculation_id=release.calculation_id,
         supersedes_release_id=release.id,
-        version_number=release.version_number + 1,
+        version_number=(
+            session.scalar(
+                select(func.max(BootstrapScheduleRelease.version_number)).where(
+                    BootstrapScheduleRelease.calculation_id == release.calculation_id
+                )
+            )
+            or 0
+        )
+        + 1,
         state=BootstrapReadiness.BASELINE_AUTHORIZED
         if data.authorize_as_baseline
         else BootstrapReadiness.CURRENT_AUTHORIZED,
@@ -931,6 +1186,9 @@ def approve_schedule(
         details={
             "authority_grant_id": str(grant.id),
             "authorized_context_id": str(context.id),
+            "source_context_id": str(source.id),
+            "baseline_context_id": str(baseline_id) if baseline_id else None,
+            "created_new_baseline": data.authorize_as_baseline,
             "state": approved.state,
         },
     )

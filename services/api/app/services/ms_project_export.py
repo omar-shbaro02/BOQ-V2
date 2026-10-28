@@ -20,7 +20,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
+from app.archive_limits import load_workbook
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -100,6 +100,7 @@ NON_SCHEDULE_WORDS = (
     "carried to",
     "provisional sum",
 )
+HIERARCHY_RE = re.compile(r"^\s*(PART|CHAPTER|SECTION)\s+(.+?)\s*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ class BoqItem:
     unit: str
     quantity: Decimal | None
     page: int
+    hierarchy: tuple[str, ...] = ()
 
     @property
     def reference(self) -> str:
@@ -138,9 +140,19 @@ def extract_pdf_text(content: bytes) -> str:
 
 def parse_boq_items(text: str) -> list[BoqItem]:
     items: list[BoqItem] = []
+    hierarchy: list[str] = []
     for page_number, page in enumerate(text.split("\f"), start=1):
         previous_text = ""
         for line in page.splitlines():
+            hierarchy_match = HIERARCHY_RE.match(line)
+            if hierarchy_match:
+                level = hierarchy_match.group(1).upper()
+                heading = " ".join(hierarchy_match.group(2).split())
+                depth = {"PART": 0, "CHAPTER": 1, "SECTION": 2}[level]
+                hierarchy = hierarchy[:depth]
+                hierarchy.append(f"{level} {heading}")
+                previous_text = ""
+                continue
             item_match = ITEM_RE.match(line)
             if not item_match:
                 if line.strip() and not re.search(r"Bill of Quantities|CHAPTER|PART\s", line):
@@ -169,6 +181,7 @@ def parse_boq_items(text: str) -> list[BoqItem]:
                     unit=unit_match.group("unit"),
                     quantity=quantity,
                     page=page_number,
+                    hierarchy=tuple(hierarchy),
                 )
             )
     if not items:

@@ -8,4 +8,5 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["services/api/tests"]
 addopts = "-q"
+markers = ["live_adapter: explicitly opted-in external service checks (may incur API charges)"]
 

@@ -1,8 +1,15 @@
+import httpx
+import pytest
 from app.config import get_settings
 from app.main import app
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
+
+def test_default_profile_rejects_external_http_before_network_access() -> None:
+    with pytest.raises(AssertionError, match="External HTTP is disabled"):
+        httpx.get("https://example.invalid")
 
 
 def test_health() -> None:
@@ -15,7 +22,7 @@ def test_taxonomies_are_published() -> None:
     response = client.get("/api/v1/meta/taxonomies")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "1.8.0"
+    assert payload["schema_version"] == "1.10.0"
     assert payload["taxonomies"]["Disposition"] == [
         "NO_ACTION",
         "MONITOR",
@@ -29,6 +36,19 @@ def test_taxonomies_are_published() -> None:
         "VERIFICATION_REQUIRED",
         "FAILED",
     ]
+    assert payload["taxonomies"]["ProgressWeightingBasis"] == [
+        "BOQ_VALUE",
+        "COST_VALUE",
+        "QUANTITY",
+        "MANUAL_AUTHORIZED",
+    ]
+
+
+def test_default_test_settings_do_not_use_external_ai_credentials() -> None:
+    settings = get_settings()
+    assert settings.environment == "test"
+    assert settings.openai_agents_enabled is False
+    assert not settings.openai_api_key
 
 
 def test_local_identity_adapter_fails_closed_outside_development(monkeypatch) -> None:
@@ -45,7 +65,7 @@ def test_local_identity_adapter_fails_closed_outside_development(monkeypatch) ->
         assert response.status_code == 503
         assert (
             response.json()["detail"]
-            == "OIDC identity adapter is required outside development/test"
+            == "OIDC identity adapter requires issuer, audience, and JWKS URL"
         )
     finally:
         get_settings.cache_clear()

@@ -11,6 +11,7 @@ from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any
 
+from app.archive_limits import load_workbook
 from app.auth import ActorContext
 from app.bootstrap_schemas import (
     BoqNormalizeCreate,
@@ -48,16 +49,18 @@ from app.models import (
     ScheduleLogicProposal,
 )
 from app.services.audit import record_audit
+from app.services.boq_pdf import PARSER_NAME as PDF_PARSER_NAME
+from app.services.boq_pdf import PARSER_VERSION as PDF_PARSER_VERSION
+from app.services.boq_pdf import PdfExtractionUnavailable, extract_pdf
 from app.storage import EvidenceStore
 from fastapi import HTTPException
-from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 PARSER_NAME = "VAI_BOQ_XLSX"
 PARSER_VERSION = "1.0.0"
-NORMALIZER_VERSION = "1.0.0"
+NORMALIZER_VERSION = "1.2.0"
 ACTIVITY_GENERATOR_VERSION = "1.0.0"
 SCHEDULE_LOGIC_VERSION = "1.0.0"
 
@@ -284,16 +287,17 @@ def create_boq_source(
             else BoqExtractionStatus.VERIFICATION_REQUIRED
         )
     elif suffix == ".pdf":
-        parser_name = "PRESERVATION_ONLY"
-        parser_version = "1.0.0"
+        parser_name = PDF_PARSER_NAME
+        parser_version = PDF_PARSER_VERSION
         confidence = Decimal("0.0000")
         status = BoqExtractionStatus.VERIFICATION_REQUIRED
-        warnings = [
-            {
-                "code": "PDF_EXTRACTION_ADAPTER_REQUIRED",
-                "message": "PDF is preserved but no governed text/OCR parser is configured",
-            }
-        ]
+        try:
+            extracted, manifest, warnings = extract_pdf(content, HEADER_ALIASES)
+            if extracted and not any(page["warnings"] for page in manifest):
+                status = BoqExtractionStatus.EXTRACTED
+                confidence = Decimal("0.7500")
+        except PdfExtractionUnavailable as exc:
+            warnings = [{"code": "PDF_EXTRACTION_ADAPTER_REQUIRED", "message": str(exc)}]
     else:
         raise HTTPException(status_code=422, detail="BOQ source must be XLSX, XLSM, or PDF")
 
@@ -319,6 +323,9 @@ def create_boq_source(
         created_by=actor.actor_id,
     )
     session.add(source)
+    # These aggregates use explicit foreign keys without ORM relationships.
+    # Insert the finalized parent before its rows on enforcing databases.
+    session.flush([source])
     for row in extracted:
         session.add(
             BoqSourceRow(
@@ -572,6 +579,9 @@ def normalize_boq_source(
     )
     session.add(run)
     parent_sections: dict[str, str] = {}
+    commercial_signatures: dict[tuple[Any, ...], str] = {}
+    detail_totals_by_sheet: dict[str, Decimal] = {}
+    grand_total_lines: list[tuple[BoqLine, str]] = []
     for row in rows:
         sheet_name = row.sheet_name or ""
         mapping = mappings[sheet_name]
@@ -585,6 +595,10 @@ def normalize_boq_source(
         }
         for field in ("quantity", "unit_price", "total_price"):
             normalized[field] = _decimal(raw[field], field, warnings)
+        for field in ("quantity", "unit_price", "total_price"):
+            value = normalized[field]
+            if value is not None and value < 0:
+                warnings.append({"code": "INVALID_NEGATIVE_COMMERCIAL_VALUE", "field": field})
         currency = normalized.get("currency")
         if currency:
             currency = currency.upper()
@@ -592,12 +606,25 @@ def normalize_boq_source(
                 warnings.append({"code": "INVALID_CURRENCY", "value": currency})
                 currency = None
             normalized["currency"] = currency
+        elif normalized.get("total_price") is not None:
+            currency = project.currency
+            normalized["currency"] = currency
+        if currency and currency != project.currency:
+            warnings.append(
+                {
+                    "code": "CURRENCY_DIFFERS_FROM_PROJECT_CONTEXT",
+                    "currency": currency,
+                    "project_currency": project.currency,
+                }
+            )
         is_header_row = row.row_number == header_rows[sheet_name]
         classification, basis, confidence = _classification(
             values=row.raw_values,
             normalized=normalized,
             is_header=is_header_row,
         )
+        if row.extraction_confidence < Decimal("1") and confidence == PlanningConfidence.HIGH:
+            confidence = PlanningConfidence.MEDIUM
         if is_header_row:
             warnings = extraction_warnings
         relevant = classification in SCHEDULE_RELEVANT_CLASSES
@@ -627,37 +654,106 @@ def normalize_boq_source(
         stable_digest = hashlib.sha256(
             f"{source.content_sha256}|{sheet_name}|{row.row_number}|{row.sequence_number}".encode()
         ).hexdigest()[:24]
-        session.add(
-            BoqLine(
-                id=uuid.uuid4(),
-                stable_line_id=f"BOQ-{stable_digest.upper()}",
-                organization_id=project.organization_id,
-                project_id=project.id,
-                normalization_run_id=run.id,
-                source_version_id=source.id,
-                source_row_id=row.id,
-                source_location={
-                    "sheet_name": row.sheet_name,
-                    "page_number": row.page_number,
-                    "row_number": row.row_number,
-                    "region": row.region,
-                },
-                parent_section=parent_sections.get(sheet_name),
-                source_row_text=source_text or row.original_text,
-                normalized_values={
-                    key: (str(value) if isinstance(value, Decimal) else value)
-                    for key, value in normalized.items()
-                },
-                unmapped_values=unmapped,
-                classification=classification,
-                classification_basis=basis,
-                schedule_relevant=relevant,
-                confidence=confidence,
-                review_state=review_state,
-                warnings=warnings,
-                **normalized,
-            )
+        stable_line_id = f"BOQ-{stable_digest.upper()}"
+        quantity = normalized["quantity"]
+        unit_price = normalized["unit_price"]
+        total_price = normalized["total_price"]
+        if quantity is not None and unit_price is not None and total_price is not None:
+            calculated = quantity * unit_price
+            variance = total_price - calculated
+            if abs(variance) > data.amount_tolerance:
+                warnings.append(
+                    {
+                        "code": "BOQ_AMOUNT_MISMATCH",
+                        "calculated_amount": str(calculated),
+                        "stated_amount": str(total_price),
+                        "variance": str(variance),
+                        "tolerance": str(data.amount_tolerance),
+                        "currency": currency,
+                    }
+                )
+        signature = (
+            normalized.get("item_number"),
+            normalized.get("description"),
+            normalized.get("unit"),
+            quantity,
+            unit_price,
+            total_price,
+            currency,
         )
+        if (
+            relevant
+            and any(value is not None for value in signature)
+            and signature in commercial_signatures
+        ):
+            warnings.append(
+                {
+                    "code": "DUPLICATE_STABLE_BOQ_LINE",
+                    "matching_stable_line_id": commercial_signatures[signature],
+                }
+            )
+        elif relevant:
+            commercial_signatures[signature] = stable_line_id
+        if warnings and review_state != PlanningReviewState.REVIEW_REQUIRED:
+            review_state = PlanningReviewState.REVIEW_REQUIRED
+            run.review_required_rows += 1
+        line = BoqLine(
+            id=uuid.uuid4(),
+            stable_line_id=stable_line_id,
+            organization_id=project.organization_id,
+            project_id=project.id,
+            normalization_run_id=run.id,
+            source_version_id=source.id,
+            source_row_id=row.id,
+            source_location={
+                "sheet_name": row.sheet_name,
+                "page_number": row.page_number,
+                "row_number": row.row_number,
+                "region": row.region,
+            },
+            parent_section=parent_sections.get(sheet_name),
+            source_row_text=row.original_text or source_text,
+            normalized_values={
+                key: (str(value) if isinstance(value, Decimal) else value)
+                for key, value in normalized.items()
+            },
+            unmapped_values=unmapped,
+            classification=classification,
+            classification_basis=basis,
+            schedule_relevant=relevant,
+            confidence=confidence,
+            review_state=review_state,
+            warnings=warnings,
+            **normalized,
+        )
+        session.add(line)
+        if total_price is not None and classification != BoqRowClass.SUBTOTAL_TOTAL:
+            detail_totals_by_sheet[sheet_name] = (
+                detail_totals_by_sheet.get(sheet_name, Decimal("0")) + total_price
+            )
+        if classification == BoqRowClass.SUBTOTAL_TOTAL and "grand total" in source_text.casefold():
+            grand_total_lines.append((line, sheet_name))
+    for line, sheet_name in grand_total_lines:
+        expected = detail_totals_by_sheet.get(sheet_name, Decimal("0"))
+        if (
+            line.total_price is not None
+            and abs(line.total_price - expected) > data.amount_tolerance
+        ):
+            line.warnings = [
+                *line.warnings,
+                {
+                    "code": "INCONSISTENT_GRAND_TOTAL",
+                    "calculated_detail_total": str(expected),
+                    "stated_grand_total": str(line.total_price),
+                    "variance": str(line.total_price - expected),
+                    "tolerance": str(data.amount_tolerance),
+                    "currency": line.currency,
+                },
+            ]
+            if line.review_state != PlanningReviewState.REVIEW_REQUIRED:
+                line.review_state = PlanningReviewState.REVIEW_REQUIRED
+                run.review_required_rows += 1
+    session.flush([run])
     record_audit(
         session,
         actor,
@@ -814,6 +910,19 @@ def create_planning_structure(
                 "stable_line_id": line.stable_line_id,
                 "work_package_id": package["id"],
                 "mapping_basis": "DETERMINISTIC_GROUPING",
+                "allocation_basis": "FULL_LINE_PRIMARY_COUNTING",
+                "allocated_quantity": str(line.quantity) if line.quantity is not None else None,
+                "allocation_percent": "1",
+                "allocated_value": (
+                    str(line.total_price)
+                    if line.total_price is not None
+                    else str(line.quantity * line.unit_price)
+                    if line.quantity is not None and line.unit_price is not None
+                    else None
+                ),
+                "unit": line.unit,
+                "currency": line.currency,
+                "primary_counting": True,
                 "confidence": "MEDIUM" if dimensions else "LOW",
                 "review_state": "REVIEW_REQUIRED" if not dimensions else "NOT_REVIEWED",
             }
@@ -1022,6 +1131,8 @@ def generate_schedule_draft(
     structure: BoqPlanningStructureVersion,
     data: ScheduleDraftGenerateCreate,
     idempotency_key: str,
+    *,
+    generation_id: uuid.UUID | None = None,
 ) -> ScheduleDraftGeneration:
     request = {"planning_structure_id": str(structure.id), **data.model_dump(mode="json")}
     digest = _structure_digest(request)
@@ -1081,7 +1192,7 @@ def generate_schedule_draft(
         mappings_by_package.setdefault(mapping["work_package_id"], []).append(mapping)
 
     generation = ScheduleDraftGeneration(
-        id=uuid.uuid4(),
+        id=generation_id or uuid.uuid4(),
         organization_id=project.organization_id,
         project_id=project.id,
         planning_structure_id=structure.id,
@@ -1172,6 +1283,24 @@ def generate_schedule_draft(
                 wbs_node_id=package["wbs_node_id"],
                 work_package_id=package["id"],
                 boq_line_refs=[item["boq_line_id"] for item in package_mappings],
+                boq_allocations=[
+                    {
+                        "boq_line_id": item["boq_line_id"],
+                        "allocated_quantity": item.get("allocated_quantity"),
+                        "allocation_percent": item.get("allocation_percent"),
+                        "allocated_value": item.get("allocated_value"),
+                        "unit": item.get("unit"),
+                        "currency": item.get("currency"),
+                        "allocation_basis": item.get("allocation_basis"),
+                        "primary_counting": activity_type == activity_types[0],
+                        "activity_role": (
+                            "PRIMARY_COUNTING"
+                            if activity_type == activity_types[0]
+                            else "TRACE_ONLY_NON_COUNTING"
+                        ),
+                    }
+                    for item in package_mappings
+                ],
                 activity_name=(
                     f"{activity_type.value.replace('_', ' ').title()} — {package['name']}"
                 ),
@@ -1242,6 +1371,7 @@ def generate_schedule_draft(
     if generation.unresolved_duration_count:
         generation.draft_state = ScheduleDraftState.VERIFICATION_REQUIRED
     session.add_all(assumptions)
+    session.flush([generation])
     record_audit(
         session,
         actor,

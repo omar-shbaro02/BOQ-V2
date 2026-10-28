@@ -25,7 +25,7 @@ substitute for an observed session with a representative operator.
 Run these before the Decision Center tasks below. The project-controls practitioner operates the
 planner stages; the Project Delivery Manager performs the authority and release stages.
 
-1. In ten minutes, upload the workbook at `/bootstrap`, inspect the immutable source version,
+1. In ten minutes, upload the workbook at `/bootstrap/advanced`, inspect the immutable source version,
    normalize it, and explain why summary, material-only, provisional, and ambiguous rows were not
    silently scheduled.
 2. In ten minutes, review proposed packages and the two-to-one BOQ/activity trace, supply a
