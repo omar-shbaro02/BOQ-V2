@@ -8,7 +8,7 @@ for (const width of [1280, 320]) {
   test(`guided navigation follows the full working order at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
-    await page.getByRole("region", { name: "Workflow orientation" }).getByRole("link", { name: "Start: Projects" }).click();
+    await page.getByRole("link", { name: "Start: Projects" }).click();
     for (const [index, route] of journey.entries()) {
       await expect(page).toHaveURL(new RegExp(`${route}$`));
       const guide = page.getByRole("region", { name: "Workflow orientation" });

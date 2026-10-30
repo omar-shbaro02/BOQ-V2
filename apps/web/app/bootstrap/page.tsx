@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { downloadProgressTemplate } from "../progress/progress-template";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { currentWorkspace } from "../workspace-session";
 
@@ -198,6 +199,23 @@ export default function BootstrapPage() {
     }
   }
 
+  async function progressTemplate(artifact?: Artifact) {
+    if (!project || !workspace) return;
+    setBusy(true); setError("");
+    try {
+      let schedule = result?.blob;
+      if (artifact) {
+        const response = await fetch(`${API}/api/v1/projects/${project.id}/evidence/artifacts/${artifact.id}/content`, { headers: authHeaders() });
+        if (!response.ok) throw new Error(await readError(response));
+        schedule = await response.blob();
+      }
+      if (!schedule) throw new Error("Generate or select a schedule first.");
+      await downloadProgressTemplate(schedule, { ...workspace, projectId: project.id }, new Date().toLocaleDateString("en-CA"));
+      setMessage("Progress template downloaded. Fill the yellow inputs, then open Progress to compare against the schedule.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to prepare progress template."); }
+    finally { setBusy(false); }
+  }
+
   useEffect(() => {
     if (!workspace || !project) return;
     void refreshLibrary(workspace, project.id);
@@ -313,6 +331,8 @@ export default function BootstrapPage() {
         <span className="result-check" aria-hidden="true">✓</span>
         <div><span className="section-kicker">Schedule generated · QA {result.qaStatus}</span><h2 id="generation-result-title">Your Excel workbook is ready</h2><p>{result.taskCount} activities and {result.findingCount} independent QA findings were generated. Review the BOQ Coverage and QA Review sheets before approval.</p></div>
         <button className="primary-action" type="button" onClick={() => download(result.blob, result.filename)}>Download Excel workbook <span aria-hidden="true">↓</span></button>
+        <button className="secondary-action" type="button" disabled={busy} onClick={() => void progressTemplate()}>Download progress template</button>
+        <Link href="/progress">Next: report and compare progress →</Link>
         <ol><li><strong>Download</strong><span>Save the XLSX workbook to your computer.</span></li><li><strong>Review</strong><span>Open it in Excel or import it into MS Project and check dates, durations, and dependencies.</span></li><li><strong>Continue</strong><span>Use the schedule assistant for reviewed changes; approval remains a separate governed step.</span></li></ol>
         <Link className="secondary-action" href="/bootstrap/schedule-assistant">Open schedule assistant →</Link>
       </section> : null}
@@ -322,7 +342,7 @@ export default function BootstrapPage() {
         {artifacts.filter((item) => item.source_type === "BOQ_UPLOAD" || item.source_type === "AI_SCHEDULE_EXPORT").length ? <div className="project-file-list">
           {artifacts.filter((item) => item.source_type === "BOQ_UPLOAD" || item.source_type === "AI_SCHEDULE_EXPORT").map((artifact) => {
             const source = sources.find((item) => item.artifact_id === artifact.id);
-            return <article key={artifact.id}><div><span className="file-kind">{artifact.source_type === "BOQ_UPLOAD" ? "BOQ" : "Excel schedule"}</span><strong>{artifact.original_filename}</strong><small>{source ? `BOQ version ${source.version_number} · ${source.extracted_row_count ? `${source.extracted_row_count} extracted rows` : "saved for scheduling · detailed review pending"}` : `${formatBytes(artifact.size_bytes)} · saved ${new Date(artifact.received_at).toLocaleString()}`}</small></div><button type="button" className="secondary-action" onClick={() => void downloadArtifact(artifact)}>Download</button></article>;
+            return <article key={artifact.id}><div><span className="file-kind">{artifact.source_type === "BOQ_UPLOAD" ? "BOQ" : "Excel schedule"}</span><strong>{artifact.original_filename}</strong><small>{source ? `BOQ version ${source.version_number} · ${source.extracted_row_count ? `${source.extracted_row_count} extracted rows` : "saved for scheduling · detailed review pending"}` : `${formatBytes(artifact.size_bytes)} · saved ${new Date(artifact.received_at).toLocaleString()}`}</small></div><button type="button" className="secondary-action" onClick={() => void downloadArtifact(artifact)}>Download</button>{artifact.source_type === "AI_SCHEDULE_EXPORT" ? <button type="button" className="secondary-action" disabled={busy} onClick={() => void progressTemplate(artifact)}>Progress template</button> : null}</article>;
           })}
         </div> : <div className="project-empty-state"><div><strong>No saved project files yet</strong><p>Upload a BOQ above. It and the generated workbook will appear here.</p></div></div>}
       </section>

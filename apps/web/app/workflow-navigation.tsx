@@ -34,7 +34,7 @@ export function WorkflowNavigation({ pathname, position }: { pathname: string; p
   const advanced = pathname === "/bootstrap/advanced";
   const assistant = pathname === "/bootstrap/schedule-assistant";
   const title = advanced ? "Schedule review & authorization" : assistant ? "Schedule-change proposal" : current?.label ?? "Command center";
-  const guidance = advanced ? "Review source coverage, resolve assumptions, calculate CPM and complete planner review before a separately authorized publication." : assistant ? "Review and recalculate the proposed changes in Microsoft Project. This proposal does not change the authorized schedule." : current?.guidance ?? "Start with a project, then follow the guided workflow. Returning operators can jump directly to the decision queue.";
+  const guidance = advanced ? "Upload your BOQ, check its work items, plan working dates, then request approval." : assistant ? "Review and recalculate the proposed changes in Microsoft Project. This proposal does not change the authorized schedule." : current?.guidance ?? "Start with a project, then follow the guided workflow. Returning operators can jump directly to the decision queue.";
   const destination = next ?? (current ? steps.find((step) => step.href === "/cases")! : steps[0]);
   const action = !current ? "Start: Projects" : !next ? "Return to cases for decisions" : `Next: ${destination.label}`;
 

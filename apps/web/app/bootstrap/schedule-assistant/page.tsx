@@ -9,36 +9,51 @@ export default function ScheduleAssistantPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [filename, setFilename] = useState("");
+  const [request, setRequest] = useState("");
+  const [result, setResult] = useState<Blob | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const body = new FormData(event.currentTarget);
     setBusy(true); setError(""); setMessage("");
+    setResult(null);
     try {
-      const response = await fetch(`${API}/api/v1/ms-project/revise-with-ai`, { method: "POST", body: new FormData(event.currentTarget) });
+      const response = await fetch(`${API}/api/v1/ms-project/revise-with-ai`, { method: "POST", body });
       if (!response.ok) throw new Error(await readError(response));
-      download(await response.blob(), "proposed_schedule_change.zip");
-      setMessage(`Proposed change package downloaded (${response.headers.get("X-VAI-Model") ?? "configured model"}). Review the report, then import the XLSX into Microsoft Project and recalculate.`);
+      const packageFile = await response.blob();
+      setResult(packageFile);
+      download(packageFile, "proposed_schedule_change.zip");
+      setMessage("Your proposal package is ready. Read the Word report, then import the XLSX into Microsoft Project and recalculate before seeking approval.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Schedule revision failed"); }
     finally { setBusy(false); }
   }
 
-  return <main className="workbench-shell project-workspace">
-    <header className="workbench-heading"><div><span className="eyebrow">BOQ to schedule · proposal assistant</span><h1 className="workbench-title">Ask for a schedule change.</h1></div><p>Describe a delay, deadline, sequence, or duration change. VAI returns a proposed MS Project import workbook and a concise planner report.</p></header>
-    <nav className="workspace-flow" aria-label="BOQ to schedule navigation"><Link href="/bootstrap">Generate schedule</Link><Link href="/bootstrap/advanced">Governed workflow</Link><span className="active">3 <b>Schedule assistant</b></span></nav>
-    <div className="workspace-layout">
-      <section className="workbench-card workspace-main"><span className="step-number">01</span><h2>Schedule-change chat</h2><p className="panel-note">Use the six-column XLSX VAI generated or exported for MS Project. The assistant preserves task IDs and names, and can propose duration, start/finish, and predecessor changes only.</p>
-        <form className="stack-form" onSubmit={submit}>
-          <label>Current schedule XLSX<input name="schedule" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></label>
-          <label>What should change?<textarea name="change_request" minLength={10} maxLength={8000} required placeholder="Example: Keep the scope, but propose a completion date three weeks earlier. Explain feasible parallel work, dependencies that must change, constraints, and risks." /></label>
-          <button className="primary-action" disabled={busy}>{busy ? "Preparing proposed schedule…" : "Create proposed schedule and report"}</button>
+  return <main className="workbench-shell schedule-change-page">
+    <header className="sc-heading"><span className="eyebrow">Schedule planning assistant</span><h1>Propose a schedule change</h1><p>Upload your current schedule and explain what needs to change. Receive a proposed workbook and a report for your planner to review.</p></header>
+    <nav className="sc-navigation" aria-label="BOQ to schedule navigation"><Link href="/bootstrap"><span aria-hidden="true">01</span>Generate schedule</Link><Link href="/bootstrap/advanced"><span aria-hidden="true">02</span>Review & approve</Link><Link href="/bootstrap/schedule-assistant" aria-current="page"><span aria-hidden="true">03</span>Schedule assistant</Link></nav>
+    <div className="sc-layout">
+      <section className="sc-form-card" aria-labelledby="sc-form-title"><div className="sc-card-heading"><span className="sc-icon" aria-hidden="true">⇄</span><div><span className="eyebrow">Create a proposal</span><h2 id="sc-form-title">What needs to change?</h2></div></div>
+        <form onSubmit={submit} aria-busy={busy}>
+          <fieldset disabled={busy}>
+            <label className="sc-field" htmlFor="sc-file"><span><b className="sc-field-number" aria-hidden="true">1</b>Upload the current schedule <small>Required</small></span></label>
+            <div className={`sc-file-box ${filename ? "has-file" : ""}`}><input id="sc-file" name="schedule" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required aria-describedby="sc-file-help" onChange={event => { setFilename(event.currentTarget.files?.[0]?.name ?? ""); setResult(null); setMessage(""); }} /><span className="sc-file-note">{filename ? "Schedule selected · ready for your request" : "Excel workbook (.xlsx)"}</span></div>
+            <p id="sc-file-help" className="sc-help">Use the VAI schedule with ID, Name, Duration, Start, Finish and Dependency columns. Task IDs and names stay unchanged.</p>
+            <label className="sc-field" htmlFor="sc-request"><span><b className="sc-field-number" aria-hidden="true">2</b>Describe the requested change <small>Required</small></span></label>
+            <textarea id="sc-request" name="change_request" minLength={10} maxLength={8000} rows={7} required value={request} onChange={event => { setRequest(event.currentTarget.value); setResult(null); setMessage(""); }} aria-describedby="sc-request-help sc-request-count" placeholder="For example: Propose a completion date three weeks earlier. Keep the existing scope, explain which tasks could overlap, and flag dependencies, assumptions and risks that need review." />
+            <div className="sc-input-meta"><p id="sc-request-help" className="sc-help">Include the affected task names or IDs, the delay or target date, and any fixed constraints.</p><small id="sc-request-count">{request.length.toLocaleString()} / 8,000</small></div>
+            <div className="sc-submit-row"><button className="primary-action" type="submit">{busy ? "Preparing your proposal…" : "Create schedule proposal"}<span aria-hidden="true">→</span></button><span>Downloads one ZIP package</span></div>
+          </fieldset>
         </form>
-        {error ? <p className="form-message error" role="alert">{error}</p> : null}{message ? <p className="form-message success" role="status">{message}</p> : null}
+        {busy ? <p className="sc-feedback" role="status">Preparing the workbook and planner report. Your original schedule is unchanged.</p> : null}
+        {error ? <p className="sc-feedback sc-feedback-error" role="alert">{error}</p> : null}
+        {message ? <div className="sc-feedback sc-feedback-success"><p role="status">{message}</p>{result ? <button type="button" onClick={() => download(result, "proposed_schedule_change.zip")}>Download proposal again ↓</button> : null}</div> : null}
       </section>
-      <aside className="workbench-card workspace-side"><span className="section-kicker">What you receive</span><h2>Actionable, reviewable output</h2><div className="boundary-list"><Boundary icon="1" title="Re-import XLSX" text="Preserved IDs and six MS Project import columns." /><Boundary icon="2" title="Word report" text="Changed tasks, construction strategy, assumptions, risks, and planner actions." /><Boundary icon="3" title="No silent authority" text="A proposal only; Microsoft Project recalculates it and human approval remains separate." /></div><p className="panel-note">The assistant uses construction-planning reasoning, but it does not invent contractual authority, crews, productivity, or entitlement.</p></aside>
+      <aside className="sc-side" aria-label="Proposal contents and review steps"><section className="sc-output-card"><span className="eyebrow">Included in your download</span><h2>Three files. One review package.</h2><div className="sc-deliverables"><Boundary icon="XLSX" title="Proposed schedule" text="MS Project import workbook with the existing task IDs and names." /><Boundary icon="DOCX" title="Planner report" text="Proposed changes, feasibility, assumptions, risks and review actions." /><Boundary icon="JSON" title="Source manifest" text="Structured proposal data and source-workbook traceability." /></div></section><section className="sc-review-card"><h2>Before using the new dates</h2><ol><li>Read the planner report and its limitations.</li><li>Import the XLSX into Microsoft Project and recalculate.</li><li>Review the result and obtain the required human approval.</li></ol><Link href="/bootstrap/advanced">Open review & approval →</Link></section><p className="sc-boundary">This creates a proposal. It does not approve work or change the authorized schedule.</p></aside>
     </div>
   </main>;
 }
 
-function Boundary({ icon, title, text }: { icon: string; title: string; text: string }) { return <span><i>{icon}</i><b>{title}</b><small>{text}</small></span>; }
-async function readError(response: Response) { const body = await response.json().catch(() => null) as { detail?: string } | null; return body?.detail ?? `Request failed (${response.status})`; }
-function download(blob: Blob, filename: string) { const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
+function Boundary({ icon, title, text }: { icon: string; title: string; text: string }) { return <div><span className="sc-file-type" aria-hidden="true">{icon}</span><div><h3>{title}</h3><p>{text}</p></div></div>; }
+async function readError(response: Response) { const body = await response.json().catch(() => null) as { detail?: string | { msg?: string }[] } | null; return typeof body?.detail === "string" ? body.detail : Array.isArray(body?.detail) ? body.detail.map(item => item.msg).filter(Boolean).join("; ") : `Request failed (${response.status})`; }
+function download(blob: Blob, filename: string) { const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }

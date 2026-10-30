@@ -5,10 +5,12 @@ from __future__ import annotations
 import io
 import re
 from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.archive_limits import load_workbook
-from app.services.ms_project_export import HEADERS, PROGRESS_HEADERS
+from app.services.ms_project_export import HEADERS
+from app.services.progress_columns import progress_input_rows
 
 
 def _date(value: object, label: str) -> date:
@@ -43,12 +45,10 @@ def analyze_progress_workbook(content: bytes, as_of: date) -> dict[str, Any]:
         int(row[0]) for row in tasks.iter_rows(min_row=2, values_only=True) if row[0] is not None
     }
     progress = workbook["Progress Report"]
-    if tuple(cell.value for cell in progress[4][:12]) != PROGRESS_HEADERS:
-        raise ValueError("The Progress Report columns have been changed; download a fresh workbook")
 
     rows: list[dict[str, Any]] = []
     seen: set[int] = set()
-    for values in progress.iter_rows(min_row=5, values_only=True):
+    for values in progress_input_rows(progress):
         if values[1] is None:
             continue
         task_id = int(values[1])
@@ -75,7 +75,11 @@ def analyze_progress_workbook(content: bytes, as_of: date) -> dict[str, Any]:
         else:
             variance = actual - planned
             status = "EARLY" if variance > 5 else "LATE" if variance < -5 else "ON TIME"
-            variance_days = round(variance / 100 * duration, 1)
+            variance_days = float(
+                (Decimal(str(variance)) / 100 * duration).quantize(
+                    Decimal("0.1"), rounding=ROUND_HALF_UP
+                )
+            )
         evidence = str(values[9] or "").strip()
         rows.append(
             {
@@ -98,6 +102,12 @@ def analyze_progress_workbook(content: bytes, as_of: date) -> dict[str, Any]:
         status: sum(row["status"] == status for row in rows)
         for status in ("EARLY", "ON TIME", "LATE", "NOT REPORTED")
     }
+    synthetic_sample = False
+    if "Progress Template Metadata" in workbook:
+        metadata = dict(
+            workbook["Progress Template Metadata"].iter_rows(min_row=2, max_col=2, values_only=True)
+        )
+        synthetic_sample = metadata.get("mode") == "SYNTHETIC_SAMPLE"
     late_days = [
         abs(row["schedule_variance_days"])
         for row in rows
@@ -106,7 +116,8 @@ def analyze_progress_workbook(content: bytes, as_of: date) -> dict[str, Any]:
     return {
         "mode": "UNPERSISTED_PREVIEW",
         "semantic_notice": (
-            "Workbook-only approximation; not authorized progress, verification, "
+            ("Fictional sample data for testing only. " if synthetic_sample else "")
+            + "Workbook-only approximation; not authorized progress, verification, "
             "or a deadline forecast."
         ),
         "as_of": as_of.isoformat(),

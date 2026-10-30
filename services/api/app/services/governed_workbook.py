@@ -13,8 +13,9 @@ from app.models import ControlledObject, ProgressWorkbookImport, Project
 from app.progress_schemas import ProgressMeasurementCreate
 from app.services.audit import record_audit
 from app.services.evidence import create_evidence_item, scoped_artifact
-from app.services.ms_project_export import HEADERS, PROGRESS_HEADERS
+from app.services.ms_project_export import HEADERS
 from app.services.progress import record_measurement
+from app.services.progress_columns import progress_input_rows
 from app.services.project_context import digest, project_lock
 from app.services.project_control import require_current_context
 from app.services.schedule import working_days_between
@@ -31,6 +32,17 @@ def parse_rows(content: bytes) -> list[dict]:
     try:
         workbook = load_workbook(io.BytesIO(content), data_only=False, read_only=True)
         try:
+            if "Progress Template Metadata" in workbook:
+                metadata = dict(
+                    workbook["Progress Template Metadata"].iter_rows(
+                        min_row=2, max_col=2, values_only=True
+                    )
+                )
+                if metadata.get("mode") == "SYNTHETIC_SAMPLE":
+                    raise ValueError(
+                        "Fictional examples cannot be saved as governed progress; "
+                        "download a blank template"
+                    )
             if "Tasks" not in workbook or "Progress Report" not in workbook:
                 raise ValueError("Workbook must contain Tasks and Progress Report")
             tasks = workbook["Tasks"]
@@ -45,11 +57,9 @@ def parse_rows(content: bytes) -> list[dict]:
                     raise ValueError("Task IDs must be unique positive integers")
                 task_rows[task_id] = values
             progress = workbook["Progress Report"]
-            if tuple(cell.value for cell in progress[4][:12]) != PROGRESS_HEADERS:
-                raise ValueError("Progress Report headers have changed")
             rows = []
             seen = set()
-            for values in progress.iter_rows(min_row=5, values_only=True):
+            for values in progress_input_rows(progress):
                 if values[1] is None:
                     continue
                 task_id = int(values[1])

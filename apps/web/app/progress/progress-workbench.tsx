@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { ProjectContextFields } from "../project-context-fields";
+import { ProgressTemplate } from "./progress-template";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
 
@@ -32,6 +33,7 @@ type ProgressRow = {
   evidence_state: string; recommendation: string;
 };
 type WorkbookAnalysis = {
+  semantic_notice: string;
   as_of: string; counts: Record<string, number>; potential_deadline_exposure_days: number;
   deadline_basis: string; rows: ProgressRow[];
 };
@@ -195,6 +197,7 @@ export function ProgressWorkbench() {
 
   return (
     <div className="workbench-grid">
+      <ProgressTemplate />
       <section className="workbench-card full-width">
         <span className="step-number">01</span>
         <h2>Preview the latest progress workbook</h2>
@@ -205,6 +208,7 @@ export function ProgressWorkbench() {
           <button disabled={busy}>{busy ? "Analyzing…" : "Preview workbook"}</button>
         </form>
         {analysis ? <div className="progress-analysis">
+          <p className="card-copy">{analysis.semantic_notice}</p>
           <div className="metric-grid">
             {(["LATE", "ON TIME", "EARLY", "NOT REPORTED"] as const).map((status) => <div className="metric-card" key={status}><span>{status}</span><strong>{analysis.counts[status] ?? 0}</strong></div>)}
             <div className="metric-card"><span>Unpersisted exposure scenario</span><strong>{analysis.potential_deadline_exposure_days} days</strong></div>

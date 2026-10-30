@@ -56,3 +56,13 @@ def test_progress_analysis_recognizes_early_and_evidence_reference() -> None:
 def test_progress_analysis_rejects_invalid_percentage() -> None:
     with pytest.raises(ValueError, match="from 0 to 100"):
         analyze_progress_workbook(_workbook((120, None)), date(2026, 10, 10))
+
+
+@pytest.mark.parametrize("cutoff,expected", [(date(2026, 10, 10), -6.3), (date(2026, 10, 5), 6.3)])
+def test_variance_rounding_matches_excel_for_positive_and_negative_half_days(cutoff, expected):
+    workbook = load_workbook(io.BytesIO(_workbook((75, None))))
+    workbook["Progress Report"]["D5"] = "25 days"
+    output = io.BytesIO()
+    workbook.save(output)
+    result = analyze_progress_workbook(output.getvalue(), cutoff)
+    assert result["rows"][0]["schedule_variance_days"] == expected

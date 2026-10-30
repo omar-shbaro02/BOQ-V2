@@ -49,6 +49,12 @@ prove the target can be met.
 4. Import the proposed XLSX into Microsoft Project and recalculate.
 5. Have a qualified planner review it. Use the governed Bootstrap workflow for authorization or a baseline.
 
+The assistant page separates the current-file upload and written request from a summary of the
+three output files and planner-review steps. Controls lock while generation is pending. If the
+download is missed, **Download proposal again** reuses the completed ZIP without another model
+request. Changing the file or written request clears that saved download; API errors retain the
+operator's inputs for correction. The page does not publish or authorize a proposed schedule.
+
 ## Future additions to consider
 
 - Reviewed project calendars, productivity libraries, and resource constraints.

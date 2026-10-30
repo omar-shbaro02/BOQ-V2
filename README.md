@@ -52,6 +52,18 @@ verification or human operator acceptance.
 
 ## Local development
 
+On this configured Windows checkout, run the whole app from the repository root:
+
+```powershell
+npm run dev
+```
+
+Open `http://localhost:3000`. This starts the bundled development PostgreSQL server,
+runs migrations, starts the API on port 8000 and the Next.js frontend on port 3000.
+Keep that terminal open; press Ctrl+C to stop the frontend/API. Database and uploaded
+files persist. The launcher uses the existing `.env`, `.venv`, Node dependencies and
+bundled PostgreSQL/Poppler runtime; no additional terminal commands are needed on this machine.
+
 Requirements: Python 3.12+, Node.js 22+, npm, and Podman or Docker with Compose support.
 
 ```bash
@@ -94,6 +106,14 @@ The correction panel stages sourced durations/productivity, calendars, dependenc
 milestone targets and constraint dates/types. Saving creates an immutable successor with an
 attributed change history; CPM, planner review and schedule authorization remain separate steps.
 
+The advanced page presents four guided stages: **Project & BOQ**, **Review the scope**,
+**Plan the schedule**, and **Review & approve**. Choose a project, upload or select a saved BOQ,
+then follow the field explanations and Back/Next controls. Document names fill from filenames;
+internal record references carry forward automatically. Calendar inputs use working-day checkboxes,
+hours and optional closure dates, with explicit planner confirmation. Structured JSON and revision
+controls remain optional advanced tools. An approver selects a reviewed release and an existing
+matching permission; administrators manage permissions separately. Viewing a stage grants no authority.
+
 For a direct MS Project import workbook, open `/bootstrap` and upload a text-native BOQ PDF plus an XLSX example with `ID, Name, Duration, Start, Finish, Dependency` columns. The downloaded workbook keeps that Tasks layout and adds a BOQ Review sheet. Existing example dates, durations, and dependencies are reused only as draft inputs; unmatched BOQ scope is included as unscheduled rows, never assigned invented timing. Map `Dependency` to MS Project's `Predecessors` field when importing. The converter requires `pdftotext` (Poppler); the API container installs it. Scanned PDFs need OCR before conversion. The advanced governed planning workbench remains at `/bootstrap/advanced` and its publication authority boundary is unchanged.
 
 After creating a development organization/project at `/setup`, open `/evidence` to connect that project, upload governed source artifacts, record typed reported claims, inspect the evidence ledger, and create separate human verification results. Local artifact storage and the development malware gate deliberately fail closed outside development/test until production adapters are configured.
@@ -118,6 +138,18 @@ and save it with a reporting cut-off and source confidence. Saved imports retain
 artifact, exact schedule/calendar/network version, reported evidence and measurements, unknowns,
 and history across refresh. They do not verify completion or issue a deadline forecast.
 
+On `/progress`, **Download your progress template** is ready automatically from the selected
+project's saved BOQ schedule; the latest clean XLSX is selected without uploading a source file.
+When several schedules exist, choose an exact saved version from the list. It preserves Tasks
+and BOQ coverage, uses Task ID and Task Name without a separate Subdivision column, clears previous progress inputs,
+and adds an editable Progress Report plus formula-driven Schedule Comparison. Choose a blank
+template for site reporting or an explicitly fictional example for testing; fictional examples
+cannot be imported as governed progress. The workbook records template version, project ID,
+source SHA-256 and reporting cut-off in **Progress Template Metadata**. BOQ generation results
+and saved Excel schedule files also offer template downloads. Requests require project access,
+are not shared or cached, and do not create database records or authority. Compare with the same
+cut-off in Excel and the preview; approximate task variance does not establish deadline impact.
+
 Open `/schedule` to inspect the current authorized network, calendars, constraints, dependency logic, milestones, float, and schedule-quality policies. Schedule assessment remains inside `/cases`, where delay evidence is traced through the exact frozen authorized version and unsupported downstream conclusions stop at local timing variance.
 
 The simple `/bootstrap` workspace can generate a proposed six-column MS Project schedule directly from a text-native BOQ by using the OpenAI Responses API. The OpenAI credential is server-only through `VAI_OPENAI_API_KEY`; it is never accepted from the customer browser. Use `VAI_OPENAI_SCHEDULE_MODEL` to override the default model. VAI owns and creates the standardized workbook, so clients upload only their BOQ rather than an Excel template. The exported workbook contains only `ID`, `Name`, `Duration`, `Start`, `Finish`, and `Dependency`. Model output is JSON-schema constrained and locally validated, but remains a planner-review proposal rather than an authorized baseline.
@@ -131,6 +163,12 @@ Open `/cost` to inspect the effective authorized budget, normalize evidence-back
 Open `/forecast` to inspect immutable production, schedule, and cost projection history with point/range results, assumptions, horizons, confidence decay, validity, and recalculation state. Forecast creation remains inside `/cases`; continued-performance and authorized-response projections use `FORECAST`, while hypothetical branches use `SCENARIO` and never alter factual or authorized state.
 
 ## First release boundary
+
+The command center opens an available project directly and lets operators switch projects without
+leaving the overview. Its next-action panel, review queue, reporting-foundation checklist and
+progress/evidence shortcuts work before a control snapshot exists. Saved schedule and reported
+workbook counts are live workspace records; verified performance and health remain tied to the
+displayed issued snapshot and reporting date. Unavailable sections stay explicit and can be retried.
 
 The MVP first converts a representative BOQ into a traceable, validated schedule draft that a planner can correct and an authorized human can approve. It then runs in shadow/advisory mode for one active project and 5–10 meaningful work packages, ingesting controlled project context and evidence, constructing and evaluating Decision Cases, showing reasoning and confidence, recommending a disposition, recording a separate human decision, and monitoring outcomes. It has no autonomous execution authority.
 

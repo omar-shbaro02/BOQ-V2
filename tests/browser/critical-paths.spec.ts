@@ -92,9 +92,12 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
     localStorage.setItem("vai-project-workspace", JSON.stringify({ actorId: "browser@example.test", organizationId }));
   }, { projectId: project.id, organizationId: organization.id });
   await page.goto("/bootstrap/advanced");
-  const step = (title: string) => page.getByRole("heading", { name: title, exact: true }).locator("..");
+  const step = (title: string) => page.locator(`[data-bootstrap-step="${({"Preserve BOQ source":"02","Planner structure review":"05","Propose logic and calendar":"07","Calculate CPM":"08","Resolve validation":"09","Generate activities and durations":"06","Planner schedule review":"10","Human authorization":"11","Publish, export, and revisions":"12"} as Record<string,string>)[title]}"]`);
   const status = page.locator(".workbench-message");
   async function submit(button: string, suffix: string) {
+    const target = page.getByRole("button", { name: button, exact: true, includeHidden: true });
+    const targetPhase = await target.evaluate(element => element.closest("[data-planning-phase]")?.getAttribute("data-planning-phase"));
+    if (targetPhase && !await target.isVisible()) await page.getByRole("navigation", {name:"Schedule preparation stages"}).getByRole("button").nth(Number(targetPhase)).click();
     const pending = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(suffix));
     await page.getByRole("button", { name: button, exact: true }).click();
     const response = await pending;
@@ -103,12 +106,12 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
     return await response.json();
   }
   await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveValue(project.id);
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Load project", exact: true }).click();
   await expect(status).toContainText("Project connected");
   const sourceStep = step("Preserve BOQ source");
-  await sourceStep.getByLabel("BOQ Excel or PDF").setInputFiles(`.test-tmp/${input.file}`);
-  await sourceStep.getByLabel("Source reference", { exact: true }).fill("BS-BROWSER-1");
-  const source = await submit("Upload and preserve", "/boq-sources");
+  await sourceStep.getByLabel("BOQ file (Excel or PDF)").setInputFiles(`.test-tmp/${input.file}`);
+  await sourceStep.getByLabel("Document name or revision", { exact: true }).fill("BS-BROWSER-1");
+  const source = await submit("Upload BOQ", "/boq-sources");
   expect(source.extraction_status).toBe("EXTRACTED");
   await submit("Normalize", "/normalizations");
   const sourceReview = page.getByRole("region", { name: "BOQ source review", exact: true });
@@ -143,6 +146,7 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   expect(initialDetail.status()).toBe(200);
   const initialActivities = (await initialDetail.json()).activities as { id: string; activity_type: string; activity_name: string; activity_code: string }[];
   if (input.rich) {
+    await step("Propose logic and calendar").getByLabel("Advanced: edit structured inputs").check();
     await step("Propose logic and calendar").getByLabel("Governed inputs JSON").fill(JSON.stringify({
       validation_owner: "browser@example.test", calendar: { name: "Reviewed calendar", working_weekdays: [0, 1, 2, 3, 4, 5], working_hours_per_day: 8, review_state: "ACCEPTED" },
       dependencies: [{ predecessor_activity_id: initialActivities.find((item) => item.activity_type === "DELIVERY")!.id,
@@ -152,12 +156,13 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
       constraints: [{ activity_id: initialActivities.find((item) => item.activity_type === "EXECUTION")!.id, constraint_type: "START_NO_EARLIER_THAN", constraint_date: "2026-10-05", source_reference: "Reviewed site access date" }],
     }));
   }
+  if (!input.rich) { const calendar = step("Propose logic and calendar"); await calendar.getByLabel("Working calendar name").fill("Reviewed site calendar"); for (const day of ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]) await calendar.getByLabel(day, {exact:true}).check(); await calendar.getByLabel("Working hours per day").fill("8"); await calendar.getByLabel("I have reviewed these working days, hours and closures.").check(); }
   await submit("Create logic", "/logic");
   await step("Calculate CPM").getByLabel("Project start").fill("2026-10-05");
   const blocked = await submit("Calculate and validate", "/calculations");
   expect(blocked.readiness).toBe("VALIDATION_BLOCKED");
   await expect(step("Resolve validation")).toContainText("MISSING_DURATION");
-  await expect(page.getByRole("button", { name: "Submit for approval", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Submit for approval", exact: true, includeHidden: true })).toBeDisabled();
   const corrections = page.getByRole("region", { name: "Material planning corrections", exact: true });
   await corrections.getByRole("button", { name: "Load correction inputs", exact: true }).click();
   await expect(corrections.getByRole("status")).toContainText("Stored planning inputs loaded");
@@ -216,12 +221,13 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   expect(draft.activity_count).toBe(input.rich ? 4 : 1);
   await expect(step("Generate activities and durations")).toContainText(`${input.rich ? 2 : input.scopeLines} BOQ lines`);
   await expect(page.getByRole("region", { name: "Recorded material correction", exact: true })).toContainText("browser@example.test");
-  await expect(page.getByRole("button", { name: "Submit for approval", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Submit for approval", exact: true, includeHidden: true })).toBeDisabled();
   const calculation = await submit("Calculate and validate", "/calculations");
   expect(calculation.readiness).toBe("PLANNER_REVIEW_REQUIRED");
   expect(calculation.proposed_finish).toBe(input.finish);
   expect(calculation.calculation_version).toBe("1.1.0");
   expect(calculation.id).not.toBe(blocked.id);
+  await page.getByRole("navigation", {name:"Schedule preparation stages"}).getByRole("button").nth(3).click();
   const reviewStep = step("Planner schedule review");
   const controls = page.getByRole("region", { name: "Planned progress control inputs", exact: true });
   await controls.getByLabel("Planned date", { exact: true }).fill("2026-10-26");
@@ -249,13 +255,12 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   expect(reviewed.edit_history[0].actor_id).toBe("browser@example.test");
   expect(reviewed.schedule_payload.bootstrap_control_inputs[0].controlled_object_id).toBe(controlObjectId);
   const authority = step("Human authorization");
-  await authority.getByLabel("Authority grant reference").fill("00000000-0000-0000-0000-000000000001");
+  await expect(authority.getByRole("combobox", {name:"Approval permission"}).locator("option")).toHaveCount(1);
   await authority.getByLabel("Approval reference", { exact: true }).fill("BS-BROWSER-APPROVAL");
   await authority.getByLabel("Reason", { exact: true }).fill("Synthetic accountable human approves the reviewed schedule.");
-  const denied = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/approve"));
-  await page.getByRole("button", { name: "Authorize schedule", exact: true }).click();
-  expect((await denied).status()).toBe(403);
-  await expect(status).not.toHaveText("Working…");
+  const denied = await request.post(`http://127.0.0.1:8011/api/v1/projects/${project.id}/bootstrap/schedule-releases/${reviewed.id}/approve`, {headers:{...auth,"Idempotency-Key":crypto.randomUUID()},data:{authority_grant_id:"00000000-0000-0000-0000-000000000001",approval_reference:"BS-BROWSER-APPROVAL",reason:"Synthetic denied unauthorized approval",authorize_as_baseline:false}});
+  expect(denied.status()).toBe(403);
+  await authority.getByText("Administrator: set up approval permissions", {exact:true}).click();
   await authority.getByLabel("Valid from", { exact: true }).fill("2026-01-01");
   if (input.rich) {
     await authority.getByRole("combobox", { name: "Grant type", exact: true }).selectOption("BASELINE_SCHEDULE_APPROVAL");
@@ -276,10 +281,12 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   expect(exported.export_metadata.authorized_context_id).toBe(approved.authorized_context_id);
   expect(exported.activities[0].name).toBe("Reviewed concrete package");
   await expect(status).not.toHaveText("Working…");
-  await sourceStep.getByLabel("BOQ Excel or PDF").setInputFiles(".test-tmp/browser-boq-v2.xlsx");
-  await sourceStep.getByLabel("Source reference", { exact: true }).fill("BS-BROWSER-2");
+  await page.getByRole("navigation", {name:"Schedule preparation stages"}).getByRole("button").nth(0).click();
+  await sourceStep.getByLabel("BOQ file (Excel or PDF)").setInputFiles(".test-tmp/browser-boq-v2.xlsx");
+  await sourceStep.getByLabel("Document name or revision", { exact: true }).fill("BS-BROWSER-2");
+  await sourceStep.getByText("This replaces an earlier BOQ (optional)", {exact:true}).click();
   await sourceStep.getByLabel("Prior BOQ version (revision only)").selectOption(source.id);
-  await submit("Upload and preserve", "/boq-sources");
+  await submit("Upload BOQ", "/boq-sources");
   await submit("Normalize", "/normalizations");
   const delta = await submit("Create revision delta", "/revision-delta");
   expect(delta.added_scope).toHaveLength(1);
@@ -289,10 +296,12 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   expect((await current.json()).id).toBe(approved.authorized_context_id);
   await page.reload();
   await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveValue(project.id);
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Load project", exact: true }).click();
   await expect(status).toContainText("Project connected");
+  await page.getByRole("navigation", {name:"Schedule preparation stages"}).getByRole("button").nth(3).click();
   await expect(published).toContainText(approved.id);
   await expect(published).toContainText("BOQ v2");
+  await page.getByRole("navigation", {name:"Schedule preparation stages"}).getByRole("button").nth(1).click();
   const reloadedSourceReview = page.getByRole("region", { name: "BOQ source review", exact: true });
   await reloadedSourceReview.getByRole("combobox", { name: "Stored BOQ source", exact: true }).selectOption(source.id);
   await reloadedSourceReview.getByRole("button", { name: "Inspect stored source", exact: true }).click();
@@ -301,6 +310,74 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   await expect(reloadedSourceReview).toContainText(draft.id);
 });
 }
+
+test("embedded progress templates download from saved schedules without uploading a source", async ({ page, request }, testInfo) => {
+  const upload = await request.post(`http://127.0.0.1:8011/api/v1/projects/${projectId}/evidence/artifacts`, {
+    headers: { "X-VAI-Actor-ID": "browser@example.test", "X-VAI-Organization-ID": organizationId },
+    multipart: { source_type: "AI_SCHEDULE_EXPORT", source_id: "Embedded template browser fixture", upload: { name: "saved-company-schedule.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: await readFile(".test-tmp/browser-progress.xlsx") } },
+  });
+  expect(upload.status()).toBe(201);
+  await page.goto("/progress");
+  const template = page.getByRole("region", { name: "Download your progress template" });
+  await expect(template.getByRole("combobox", { name: "Template project" })).toHaveValue(projectId);
+  await expect(template.locator('input[type="file"]')).toHaveCount(0);
+  await expect(template.getByRole("combobox", { name: "Saved project schedule" })).toHaveValue((await upload.json()).id);
+  await template.getByLabel("Template reporting cut-off").fill("2026-10-05");
+  const blankDownload = page.waitForEvent("download");
+  await template.getByRole("button", { name: "Download progress template" }).click();
+  const blank = await blankDownload;
+  expect(blank.suggestedFilename()).toBe("project-progress-template.xlsx");
+  await page.locator('input[name="schedule"]').setInputFiles({ name: blank.suggestedFilename(), mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: await readFile((await blank.path())!) });
+  await page.locator('input[name="as_of"]').fill("2026-10-05");
+  await page.getByRole("button", { name: "Preview workbook" }).click();
+  await expect(page.locator(".progress-analysis")).toContainText("NOT REPORTED");
+  await template.getByRole("combobox", { name: "Template contents" }).selectOption("sample");
+  const exampleDownload = page.waitForEvent("download");
+  await template.getByRole("button", { name: "Download progress template" }).click();
+  const example = await exampleDownload;
+  expect(example.suggestedFilename()).toBe("fictional-progress-example.xlsx");
+  await page.locator('input[name="schedule"]').setInputFiles({ name: example.suggestedFilename(), mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: await readFile((await example.path())!) });
+  await page.getByRole("button", { name: "Preview workbook" }).click();
+  await expect(page.locator(".progress-analysis")).toContainText("Fictional sample data for testing only");
+  await expect(page.locator(".progress-analysis")).toContainText("25% reported");
+  await auditAccessibility(page, testInfo, "progress-template");
+  await page.setViewportSize({ width: 320, height: 900 });
+  await auditAccessibility(page, testInfo, "progress-template-mobile");
+  await assertReflow(page);
+});
+
+test("switching template projects never reuses another project's saved schedule", async ({ page, request }) => {
+  const org = await request.post("http://127.0.0.1:8011/api/v1/organizations", {
+    headers: { "X-VAI-Actor-ID": "template-switch@test", "X-VAI-Roles": "ORGANIZATION_ADMIN" },
+    data: { name: "Template switch tests", slug: `template-switch-${Date.now()}` },
+  });
+  expect(org.status()).toBe(201);
+  const orgId = (await org.json()).id;
+  const auth = { "X-VAI-Actor-ID": "template-switch@test", "X-VAI-Organization-ID": orgId };
+  const createProject = (code: string) => request.post(`http://127.0.0.1:8011/api/v1/organizations/${orgId}/projects`, {
+    headers: auth, data: { code, name: code, timezone: "Asia/Beirut", currency: "USD", delivery_model: "DESIGN_BID_BUILD", reporting_cadence: "WEEKLY" },
+  });
+  const original = await createProject("SAVED");
+  expect(original.status()).toBe(201);
+  const originalId = (await original.json()).id;
+  const created = await createProject("EMPTY");
+  expect(created.status()).toBe(201);
+  const saved = await request.post(`http://127.0.0.1:8011/api/v1/projects/${originalId}/evidence/artifacts`, { headers: auth,
+    multipart: { source_type: "AI_SCHEDULE_EXPORT", source_id: "Switch fixture", upload: { name: "saved.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: await readFile(".test-tmp/browser-progress.xlsx") } },
+  });
+  expect(saved.status()).toBe(201);
+  await page.addInitScript(({orgId, originalId}) => { localStorage.setItem("vai-project-workspace", JSON.stringify({ actorId: "template-switch@test", organizationId: orgId })); localStorage.setItem("vai-active-project", originalId); }, { orgId, originalId });
+  await page.goto("/progress");
+  const template = page.getByRole("region", { name: "Download your progress template" });
+  const project = template.getByRole("combobox", { name: "Template project" });
+  await expect(project).toHaveValue(originalId);
+  await expect(template.getByRole("button", { name: "Download progress template" })).toBeEnabled();
+  await project.selectOption((await created.json()).id);
+  await expect(template.getByRole("button", { name: "Download progress template" })).toBeDisabled();
+  await expect(template.getByRole("combobox", { name: "Saved project schedule" })).toHaveCount(0);
+  await expect(template.getByRole("link", { name: "Generate the project schedule" })).toBeVisible();
+  await expect(template.locator('input[type="file"]')).toHaveCount(0);
+});
 
 test("governed progress upload persists reported measurements across reload", async ({ page }, testInfo) => {
   await page.goto("/progress");

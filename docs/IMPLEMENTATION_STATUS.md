@@ -1,6 +1,206 @@
 # Implementation Status
 
-Last updated: 2026-10-27
+Last updated: 2026-10-29
+
+## Supplied VAI sidebar logo (2026-10-29)
+
+Replaced the placeholder letter badge and text branding with the user's original VAI PNG,
+served locally from `apps/web/public/vai-logo.png`. CSS frames the centered wordmark without
+altering the source artwork. The logo links to the command center and has accessible text.
+Web lint and typecheck pass. Verified image loading and visually inspected desktop and 320px
+mobile-navigation screenshots against the running app. No full suite rerun for this asset/style
+change; the preceding 56-check suite predates it. Delivery gates and remaining phases are unchanged.
+
+## Schedule-change assistant UI cleanup (2026-10-29)
+
+Replaced the unstyled assistant page elements with scoped layout/styles: compact heading,
+properly spaced planning-navigation links with a current-page state, a padded form card, styled
+native XLSX picker with selection feedback, readable multiline request field, input guidance and
+character count, and a balanced desktop form/output layout that stacks on mobile. Deliverables
+now describe the XLSX, Word report and JSON manifest, followed by explicit planner-review steps.
+Busy state locks inputs; structured API errors are readable without clearing user input. A
+successful package can be downloaded again from memory without another generation request;
+editing the selected file or request clears that prior result to prevent a stale proposal mix-up.
+The generation endpoint, proposal-only boundary and approval requirements are unchanged.
+
+Current verification passes: all 56 browser checks, including mocked success/busy/error/redownload
+behavior, desktop/320px axe and reflow; desktop/mobile screenshots were visually inspected.
+All 334 Python tests plus four subtests pass, with the two PostgreSQL/live-provider gated tests
+skipped. Generated contracts, Python lint/format, web lint/typecheck/production build, credential
+scan and diff whitespace checks pass. The running localhost page returns 200 with the new UI.
+Synthetic download fixtures test browser behavior only; no live AI or genuine model-generated
+package is claimed. The browser suite used an isolated copy of the current web source and a
+disposable local API, leaving the user's running app in place.
+One R10 workstream and Phases 12–14 remain; operator and external acceptance gates stay open.
+
+## Guided BOQ review and schedule inputs (2026-10-29)
+
+Reworked `/bootstrap/advanced` into four visible stages: Project & BOQ, Review the scope, Plan the
+schedule, and Review & approve. The oversized technical title and twelve simultaneously visible
+cards are replaced by a stage navigator, role-specific instructions, short field guidance, and
+explicit Back/Next actions. Stage changes are view changes only; saved source and reviewed
+structure results move the operator to the relevant next view without triggering another command.
+Focus follows the changed stage. Inactive forms stay mounted to retain inputs, but remain hidden.
+
+The filename fills the BOQ document-name field; revisions and existing-artifact registration are
+optional expanders. Existing BOQ versions can be selected for review. Internal source/structure/
+draft/calculation references carry forward automatically and are inspectable as technical details.
+Draft generation and calendar entry now have plain form controls, an accountable planner field,
+explicit working-day/hour inputs, optional closures and explicit calendar review confirmation.
+No durations, rates or working-week assumptions are silently invented. Structured JSON remains
+an explicit advanced option; typed planning corrections and all validation gates remain available.
+Reviewed schedules and the acting human's existing approval permissions are selected by label.
+Permission creation is a separate administrator expander; the backend still enforces exact grants.
+Changing project clears staged project-scoped state, and the project selector is locked during work.
+
+Current validation passes: all 54 browser checks, including complete Excel/PDF/procurement
+journeys, authority denial, material correction, revision isolation, new input-guidance and
+view-only navigation tests, and desktop/320px axe/reflow. All 334 Python tests plus four subtests
+pass (two optional profiles skipped), along with generated contracts, credential scan, Python
+lint/format, web lint/types and the production build. The initial full journey exposed an
+asynchronous reviewed-schedule dropdown selection issue; its remount key now includes the loaded
+release list, and the complete suite was rerun successfully. Test navigation was updated to visit
+the explicit review stage before inspecting historical sources. No retries hide failures.
+Evidence: `.test-tmp/command-center-browser.json`, `.test-tmp/planning-api.xml`, and desktop/mobile
+screenshots in `.test-tmp/planning-guide/`. Browser checks used a separate current-source test app
+and disposable API to keep the user's running website available. Both layouts were visually
+inspected. Temporary test services stopped. No persistent schema or phase acceptance boundary changed;
+one R10 workstream and Phases 12–14 remain, including representative human operator sessions.
+
+## Phase 12 command-center usability redesign (2026-10-29)
+
+Replaced the repeated Unknown overview with a project-first command center. Projects load from
+the current authorized workspace, retain a valid previous selection or select the first available
+project, and can be switched directly on the page. Aborted/stale requests cannot mix project data.
+Independent resource errors stay visible without suppressing other available records or becoming
+zero counts. A contextual next step, live review queue with priority/owner/deadline/next action,
+reporting-foundation checklist, and shortcuts to progress/evidence/schedule changes direct work.
+The home page no longer duplicates the generic workflow banners; guided navigation remains on
+the individual workbenches. New-workspace, loading, partial-error and pre-snapshot states explain
+the next action rather than displaying empty health/forecast widgets.
+
+Live counts of saved proposals and reported workbook imports remain separate from dated issued
+snapshot performance. Verified completion, package contributions, health explanations, snapshot
+questions and scoped cost/forecast details retain their authoritative sources and limitations.
+No weighted completion, authorization, missing amount, deadline or forecast is fabricated. Compact
+sans-serif typography, direct project selection, actionable cards and responsive layouts replace
+the oversized heading and unused summary space. Human decisions still occur in the governed case.
+
+Current verification passes: 334 Python tests plus four subtests (two optional profiles skipped),
+generated contracts, credential scan, Python lint/format/compilation, web lint/types/build, synthetic
+HTTPS identity, and the enforcing PostgreSQL migration/race/recovery/96-read rehearsal. All 52
+standard browser checks pass, including automatic selection, project-switch/late-response isolation,
+partial-error handling, the full guided navigation, report/assistant flows and snapshot handoff.
+Desktop/320px axe and reflow checks pass. Welcome, pre-snapshot, mobile and populated snapshot
+screens were visually inspected; the populated screen produced no page errors.
+
+The initial default runner retained a browser-startup FAIL because the running local development
+server held Next's checkout lock. Browser verification then used an ignored copy of the current
+app/config/generated sources, its own Next build directory and a disposable API, leaving the local
+app running. A missing generated-source copy was corrected, and the full suite was rerun cleanly.
+The snapshot-handoff check also retained the project name as the page heading. Raw initial runner
+evidence remains `.test-tmp/r10-20261029T121546Z-0d94538d/`; the corrected 52-check browser evidence
+is `.test-tmp/command-center-browser.json`, with screenshots in `.test-tmp/command-center/`.
+The normal production build was repeated after the final layout changes. Temporary test services
+were stopped; no schema migration or customer-data mutation was introduced.
+One R10 workstream and Phases 12–14 remain; this does not complete human operator acceptance or
+authorize entry into Phase 13 or a pilot.
+
+## Task-only progress template layout (2026-10-28)
+
+Removed the redundant Subdivision column from newly downloaded Progress Report and Schedule
+Comparison sheets. Task ID and Task Name identify each row. Template metadata advances to version
+2; editable inputs shift to F–J, and formulas, filters, freeze panes, date formats and validation
+follow the new columns. BOQ source sheets remain intact. Both preview and governed ingestion
+normalize legacy 12-column and current 11-column layouts, preserving existing downloaded files
+and semantic/authority checks. Filled examples still fail governed ingestion.
+
+All 334 Python tests plus four subtests pass (two optional profiles skipped), as do the 22 focused
+parser/API checks, generated-contract checks, credential scan and Python lint/format. Independent
+recalculation matches all 57 activities from the local ZTWR schedule; both new sheets were rendered
+and inspected. Evidence: `.test-tmp/task-only-api.xml` and `.test-tmp/task-only-*.png`.
+The running development API does not enable hot reload: restart `npm run dev` before
+downloading the new layout. No schema migration or phase completion is claimed. One R10
+workstream and Phases 12–14 remain, with human/external acceptance gates unchanged.
+
+## Embedded progress template: remove the source-upload prerequisite (2026-10-28)
+
+Corrected the Progress page's template flow: it now discovers the selected project's saved clean
+AI_SCHEDULE_EXPORT XLSX artifacts, automatically selects the latest, and downloads the project's
+progress template directly from that stored schedule. No original-workbook file picker or initial
+upload is required. Multiple saved versions remain explicitly selectable; projects without a
+schedule link to BOQ generation rather than requesting a local file. Project changes invalidate
+the old source list, cancel its fetch, and disable download until the selected project's sources
+resolve. The submitted project must match the loaded connection. Existing scoped artifact reads
+and template generation preserve source/tenant controls; no persistent schema or backend behavior
+changed. The blank/example modes and comparison/metadata sheets remain available.
+
+Current validation passes: 333 Python tests plus four subtests (two explicit optional profiles
+skipped), generated contracts, credential scan, Python lint/format, web lint/types and normal
+production build. Two focused real-browser regressions pass: direct blank/example downloads
+from saved schedules and preview round trips with no source-upload input, plus switching between
+two projects without reusing the prior project's schedule. Loaded controls pass axe at 1280/320px
+and reflow; both layouts were rendered and inspected. Evidence: `.test-tmp/embedded-api.xml`,
+`.test-tmp/embedded-progress/`, and `.test-tmp/embedded-template-{desktop,mobile}.png`.
+The focused browser harness routed only its own browser requests to disposable API fixtures so
+the user's running development app stayed available. A broader replay through that transport
+hit unrelated fixture-routing failures and was stopped; a current full 49-browser pass is not
+claimed. The temporary test build was replaced by the normal API configuration. No database
+schema changed, so no new migration rehearsal was required. One R10 workstream and Phases 12–14
+remain; human acceptance and external release/pilot gates remain open.
+
+## Single-command Windows development launcher (2026-10-28)
+
+Confirmed the root `npm run dev` entry starts the configured Windows checkout's PostgreSQL,
+migrations, API and frontend. The launcher now anchors its working directory to the repository,
+uses `npm.cmd` explicitly inside PowerShell, checks occupied app ports before infrastructure work,
+requires a successful API health response, and cleans up the owned Python process tree when the
+frontend exits. README documents the one-terminal workflow. Two actual root-command startups
+returned API health OK and HTTP 200 for `/progress`; ending the owned frontend verified cleanup
+with ports 3000/8000 free. PowerShell syntax and diff checks pass. Terminal Ctrl+C itself was not
+automated because this environment could not allocate a PTY. Existing database/files were retained.
+The test app was stopped so the user can run `npm run dev` in their own terminal without conflicts.
+No product schema or phase acceptance gates changed; one R10 workstream and Phases 12–14 remain.
+
+## Phase 12 reusable project progress templates (2026-10-28)
+
+Added a project-scoped authenticated progress-template download endpoint and website controls on
+the Progress page, BOQ generation result and saved schedule file list. Templates derive from each
+operator's selected schedule rather than a shared sample project. Exact task IDs/names/dates and
+original source sheets are preserved; existing subdivisions are retained or reconstructed from
+BOQ Coverage activity mappings. Missing mappings remain visibly unmapped. Fresh copies clear
+prior progress/evidence/person inputs. An optional fictional example uses the selected reporting
+cut-off, remains visibly synthetic in the workbook/preview, and fails governed workbook ingestion.
+
+The template adds editable yellow progress fields, a formula-driven comparison (planned/reported
+percent, percentage-point variance, signed approximate duration-equivalent days and status), and
+versioned metadata with source SHA-256, project ID, cut-off and semantic boundaries. Comparison
+uses inclusive calendar-day linear approximation and ±5 percentage-point status tolerance,
+matching the existing preview; no project-wide weighting, verified fact, baseline authority or
+critical-path deadline conclusion is invented. Requests require project read access and return
+private/no-store files without persistence or new migrations. Existing local preview deployment
+restrictions and production adapter gates remain in force.
+
+Current validation: generated contracts, credential scan, 333 Python tests plus four subtests
+(live AI and the separately exercised PostgreSQL profile skipped), Python lint/format/compilation,
+web lint/types/build, synthetic HTTPS identity, and enforcing PostgreSQL migration/race/recovery/
+96-read checks pass. All 48 standard browser checks pass, including blank/example downloads,
+preview round trips, axe and 320px reflow. The loaded progress metric cards now stack on phones.
+Excel-style half-away-from-zero rounding matches preview and workbook comparison; two regression
+cases cover signed half values. An independent spreadsheet-engine check recalculated all 35
+activities from the existing local schedule against the API, exercised blank/zero edits, and
+rendered both new sheets. Native desktop Excel was not automated.
+
+Evidence is split deliberately: `.test-tmp/r10-20261028T134247Z-2c48cae9/` retains the complete
+run and its original mobile-reflow failure (47 other browser checks passed); the corrected full
+48-check browser suite and repeated web lint/types/build are PASS in
+`.test-tmp/template-browser-correction-20261028/report.md` and `report.json`. An earlier run
+correctly failed browser readiness while the user's development server held Next's checkout lock;
+the owned local app was briefly stopped for isolated verification and restarted afterward.
+Source-fidelity, legacy mappings, source rejection, sample denial and tenant/access tests pass.
+There is no claim that the original failed R10 report became PASS or that external gates ran.
+One R10 remediation workstream and Phases 12–14 remain; human Phase 12 acceptance is still open,
+with Phase 13/14 held at their documented gates.
 
 ## Phase 12 operator controls and five-package acceptance preparation (2026-10-27)
 

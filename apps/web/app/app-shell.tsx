@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { SessionControl } from "./session-control";
@@ -49,12 +50,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   return <div className="app-frame">
     <a className="skip-link" href="#main-content" inert={navigationOpen}>Skip to main content</a>
     <aside ref={sidebar} id="primary-navigation" className={`app-sidebar ${navigationOpen ? "open" : ""}`} role={navigationOpen ? "dialog" : undefined} aria-modal={navigationOpen || undefined} aria-label="Primary navigation">
-      <div className="brand-row"><Link className="brand" href="/" onClick={() => setOpen(false)}><span className="brand-mark" aria-hidden="true">V</span><span><strong>VAI</strong><small>Project intelligence</small></span></Link><button className="sidebar-close" onClick={() => setOpen(false)} aria-label="Close navigation">×</button></div>
+      <div className="brand-row"><Link className="brand" href="/" aria-label="VAI command center" onClick={() => setOpen(false)}><span className="brand-logo"><Image src="/vai-logo.png" alt="VAI" width={1920} height={1080} unoptimized preload /></span></Link><button className="sidebar-close" onClick={() => setOpen(false)} aria-label="Close navigation">×</button></div>
       <nav className="sidebar-nav" aria-label="Project workflow">{groups.map((group) => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span>{group.links.map((link) => { const active = link.href === "/" ? pathname === "/" : (pathname === link.href || pathname.startsWith(`${link.href}/`)); return <Link className={`nav-link ${active ? "active" : ""}`} href={link.href} key={link.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined}><NavIcon name={link.icon}/><span>{link.label}</span></Link>; })}</div>)}</nav>
       <div className="sidebar-project"><span className="project-avatar">PW</span><span><strong>Project workspace</strong><small>Follow the stages above</small></span></div>
     </aside>
     {navigationOpen ? <button className="sidebar-scrim" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(false)}/> : null}
-    <div className="app-stage" inert={navigationOpen}><header className="app-topbar"><button ref={menuButton} className="menu-button" onClick={() => setOpen(true)} aria-label="Open navigation" aria-controls="primary-navigation" aria-expanded={navigationOpen}><NavIcon name="menu"/></button><div className="topbar-context">Project control workspace <small>Plan · Evidence · Decisions</small></div><div className="topbar-actions"><Link className="topbar-queue" href="/decision-center">Decision queue <span aria-hidden="true">↗</span></Link><SessionControl /></div></header><div className="app-content" id="main-content" tabIndex={-1}><WorkflowNavigation pathname={pathname} position="top"/>{children}<WorkflowNavigation pathname={pathname} position="bottom"/></div></div>
+    <div className="app-stage" inert={navigationOpen}><header className="app-topbar"><button ref={menuButton} className="menu-button" onClick={() => setOpen(true)} aria-label="Open navigation" aria-controls="primary-navigation" aria-expanded={navigationOpen}><NavIcon name="menu"/></button><div className="topbar-context">Project control workspace <small>Plan · Evidence · Decisions</small></div><div className="topbar-actions"><Link className="topbar-queue" href="/decision-center">Decision queue <span aria-hidden="true">↗</span></Link><SessionControl /></div></header><div className="app-content" id="main-content" tabIndex={-1}>{pathname !== "/" ? <WorkflowNavigation pathname={pathname} position="top"/> : null}{children}{pathname !== "/" ? <WorkflowNavigation pathname={pathname} position="bottom"/> : null}</div></div>
   </div>;
 }
 

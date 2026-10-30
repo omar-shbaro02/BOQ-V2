@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import uuid
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -38,6 +41,7 @@ from app.services.progress import (
     list_policies,
     record_measurement,
 )
+from app.services.progress_template import build_progress_template
 from app.services.project_control import create_project_control_snapshot
 from app.services.snapshot_assistant import answer_question
 from app.storage import EvidenceStore, get_evidence_store
@@ -62,6 +66,38 @@ ANALYSIS_ROLES = {
     ProjectRole.DECISION_OWNER,
 }
 POLICY_ROLES = {ProjectRole.ORGANIZATION_ADMIN, ProjectRole.PROJECT_ADMIN}
+
+
+@router.post("/progress/template")
+def download_progress_template(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    schedule: Annotated[UploadFile, File()],
+    as_of: Annotated[date, Form()],
+    sample: Annotated[bool, Form()] = False,
+) -> StreamingResponse:
+    scoped_project(session, actor, project_id, READ_ROLES)
+    if not schedule.filename or not schedule.filename.lower().endswith(".xlsx"):
+        raise HTTPException(422, "Upload an XLSX schedule workbook")
+    content = schedule.file.read(20 * 1024 * 1024 + 1)
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(413, "Schedule workbook must be 20 MB or smaller")
+    try:
+        output = build_progress_template(
+            content, project_id=str(project_id), as_of=as_of, sample=sample
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    filename = "fictional-progress-example.xlsx" if sample else "project-progress-template.xlsx"
+    return StreamingResponse(
+        io.BytesIO(output),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/progress/workbook-imports", response_model=ProgressWorkbookRead, status_code=201)

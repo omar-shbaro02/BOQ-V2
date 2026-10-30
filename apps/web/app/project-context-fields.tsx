@@ -10,13 +10,17 @@ type Workspace = { actorId: string; organizationId: string };
 type Project = { id: string; code: string; name: string };
 type DecisionCase = { id: string; case_number: string; title: string; lifecycle: string };
 
-export function ProjectContextFields({ includeCase = false }: { includeCase?: boolean }) {
+export function ProjectContextFields({ includeCase = false, projectLabel = "Project", onConnectionChange }: { includeCase?: boolean; projectLabel?: string; onConnectionChange?: (connection: { actorId: string; organizationId: string; projectId: string } | null) => void }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [cases, setCases] = useState<DecisionCase[]>([]);
   const [caseId, setCaseId] = useState("");
   const [message, setMessage] = useState("Loading projects…");
+
+  useEffect(() => {
+    onConnectionChange?.(workspace && projectId ? { ...workspace, projectId } : null);
+  }, [onConnectionChange, workspace, projectId]);
 
   useEffect(() => {
     async function initialize() {
@@ -67,7 +71,7 @@ export function ProjectContextFields({ includeCase = false }: { includeCase?: bo
   return <>
     <input type="hidden" name="actorId" value={workspace?.actorId ?? ""} />
     <input type="hidden" name="organizationId" value={workspace?.organizationId ?? ""} />
-    <label>Project<select name="projectId" value={projectId} onChange={(event) => selectProject(event.target.value)} required>
+    <label>{projectLabel}<select name="projectId" value={projectId} onChange={(event) => selectProject(event.target.value)} required>
       <option value="">Choose a project</option>
       {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
     </select></label>
