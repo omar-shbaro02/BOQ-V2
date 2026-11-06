@@ -113,7 +113,7 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   await sourceStep.getByLabel("Document name or revision", { exact: true }).fill("BS-BROWSER-1");
   const source = await submit("Upload BOQ", "/boq-sources");
   expect(source.extraction_status).toBe("EXTRACTED");
-  await submit("Normalize", "/normalizations");
+  await page.getByText("BOQ source details (optional)", {exact:true}).click();
   const sourceReview = page.getByRole("region", { name: "BOQ source review", exact: true });
   await sourceReview.getByRole("button", { name: "Inspect stored source", exact: true }).click();
   await expect(sourceReview.getByRole("status")).toContainText("Stored source and normalization loaded");
@@ -137,10 +137,12 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   await auditAccessibility(page, testInfo, `bootstrap-source-${input.format.toLowerCase()}-mobile`);
   await assertReflow(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  const structure = await submit("Generate structure", "/planning-structures");
+  const structureResponse = await request.get(`http://127.0.0.1:8011/api/v1/projects/${project.id}/bootstrap/boq-sources/${source.id}/planning-structures`, {headers:auth});
+  expect(structureResponse.status()).toBe(200);
+  const structure = (await structureResponse.json()).at(-1);
   expect(structure.line_mappings).toHaveLength(input.scopeLines);
-  await step("Planner structure review").getByLabel("Review reason").fill("Review synthetic BOQ scope and grouping.");
-  await submit("Accept proposal", "/revisions");
+  await expect(step("Planner structure review").getByLabel("Review reason")).toHaveCount(0);
+  await submit("Approve work packages", "/revisions");
   const initialDraft = await submit("Generate draft", "/schedule-drafts");
   const initialDetail = await request.get(`http://127.0.0.1:8011/api/v1/projects/${project.id}/bootstrap/schedule-drafts/${initialDraft.id}`, { headers: auth });
   expect(initialDetail.status()).toBe(200);
@@ -287,7 +289,6 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   await sourceStep.getByText("This replaces an earlier BOQ (optional)", {exact:true}).click();
   await sourceStep.getByLabel("Prior BOQ version (revision only)").selectOption(source.id);
   await submit("Upload BOQ", "/boq-sources");
-  await submit("Normalize", "/normalizations");
   const delta = await submit("Create revision delta", "/revision-delta");
   expect(delta.added_scope).toHaveLength(1);
   expect(delta.current_authorized_context_id).toBe(approved.authorized_context_id);
@@ -302,6 +303,7 @@ test(`advanced BOQ corrections (${input.format}) require recalculation and human
   await expect(published).toContainText(approved.id);
   await expect(published).toContainText("BOQ v2");
   await page.getByRole("navigation", {name:"Schedule preparation stages"}).getByRole("button").nth(1).click();
+  await page.getByText("BOQ source details (optional)", {exact:true}).click();
   const reloadedSourceReview = page.getByRole("region", { name: "BOQ source review", exact: true });
   await reloadedSourceReview.getByRole("combobox", { name: "Stored BOQ source", exact: true }).selectOption(source.id);
   await reloadedSourceReview.getByRole("button", { name: "Inspect stored source", exact: true }).click();

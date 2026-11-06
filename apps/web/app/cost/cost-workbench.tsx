@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { ProjectContextFields } from "../project-context-fields";
 
 const API_URL = process.env.NEXT_PUBLIC_VAI_API_URL ?? "http://localhost:8000";
@@ -16,6 +16,7 @@ export function CostWorkbench() {
   const [records, setRecords] = useState<CostRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const clearProject = useCallback(() => { setConnection(null); setBudget(null); setPolicies([]); setRecords([]); setMessage(null); }, []);
 
   function headers(active = connection): HeadersInit {
     if (!active) return {};
@@ -26,6 +27,7 @@ export function CostWorkbench() {
     const form = new FormData(event.currentTarget);
     const next = { actorId: String(form.get("actorId")), organizationId: String(form.get("organizationId")), projectId: String(form.get("projectId")) };
     setConnection(next);
+    setBudget(null); setPolicies([]); setRecords([]);
     await refresh(next);
   }
   async function refresh(active = connection) {
@@ -37,14 +39,16 @@ export function CostWorkbench() {
         fetch(`${API_URL}/api/v1/projects/${active.projectId}/cost/policies`, { headers: headers(active) }),
         fetch(`${API_URL}/api/v1/projects/${active.projectId}/cost/records`, { headers: headers(active) }),
       ]);
-      if (!budgetResponse.ok) throw new Error(await readError(budgetResponse));
-      if (!policyResponse.ok) throw new Error(await readError(policyResponse));
-      if (!recordResponse.ok) throw new Error(await readError(recordResponse));
-      setBudget((await budgetResponse.json()) as Budget);
-      setPolicies((await policyResponse.json()) as Policy[]);
-      setRecords((await recordResponse.json()) as CostRecord[]);
-      setMessage(null);
-    } catch (caught) { setMessage(errorMessage(caught)); } finally { setBusy(false); }
+      const issues: string[] = [];
+      if (budgetResponse.ok) setBudget(await budgetResponse.json() as Budget);
+      else { setBudget(null); issues.push(`Budget: ${await readError(budgetResponse)}`); }
+      if (policyResponse.ok) setPolicies(await policyResponse.json() as Policy[]);
+      else { setPolicies([]); issues.push(`Policy: ${await readError(policyResponse)}`); }
+      if (recordResponse.ok) setRecords(await recordResponse.json() as CostRecord[]);
+      else { setRecords([]); issues.push(`Cost records: ${await readError(recordResponse)}`); }
+      setMessage(issues.length ? issues.join(" · ") : null);
+      return issues.join(" · ");
+    } catch (caught) { const issue = errorMessage(caught); setMessage(issue); return issue; } finally { setBusy(false); }
   }
   async function normalize(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,16 +63,16 @@ export function CostWorkbench() {
         }),
       });
       if (!response.ok) throw new Error(await readError(response));
-      setMessage("Immutable cost record normalized with source lineage.");
-      await refresh();
+      const issues = await refresh();
+      setMessage(`Cost record saved.${issues ? ` ${issues}` : ""}`);
     } catch (caught) { setMessage(errorMessage(caught)); setBusy(false); }
   }
-  return <div className="workbench-grid">
-    <section className="workbench-card full-width"><span className="step-number">01</span><h2>Choose project</h2><form className="inline-form context-form" onSubmit={connect}><ProjectContextFields /><button>Load cost controls</button><button type="button" className="secondary" disabled={!connection || busy} onClick={() => refresh()}>Refresh</button></form></section>
-    <section className="workbench-card"><span className="step-number">02</span><h2>Authorized budget</h2>{budget ? <div className="network-summary"><strong>{budget.currency} {budget.current_authorized_budget}</strong><span>Approved {budget.approved_budget} + changes {budget.authorized_changes}</span><small>Authorized v{budget.version_number} · {budget.measurement_basis} · {budget.context_id}</small></div> : <p className="empty-state">Connect a project with an authorized budget.</p>}</section>
-    <section className="workbench-card"><span className="step-number">03</span><h2>Visible policy</h2><div className="mini-ledger">{policies.map((policy) => <div key={policy.policy_version}><strong>{policy.policy_version}</strong><span>Alignment ±{Number(policy.alignment_tolerance) * 100}% · forecast after {Number(policy.minimum_earned_ratio_for_forecast) * 100}% earned</span><small>{policy.rationale}</small></div>)}</div></section>
-    <section className="workbench-card"><span className="step-number">04</span><h2>Normalize cost evidence</h2><form className="stack-form compact" onSubmit={normalize}><label>Evidence reference<input name="evidenceId" required /></label><div className="form-pair"><label>Record kind<select name="recordKind"><option>ACTUAL</option><option>ACCRUAL</option><option>COMMITMENT</option><option>EARNED_VALUE</option><option>PHYSICAL_VALUE</option><option>BOQ_VALUE</option></select></label><label>Amount<input name="amount" type="number" min="0" step="any" required /></label></div><div className="form-pair"><label>Currency<input name="currency" defaultValue="USD" required /></label><label>Basis<input name="basis" defaultValue="COST_VALUE" required /></label></div><div className="form-pair"><label>Period start<input name="periodStart" type="date" required /></label><label>Period end<input name="periodEnd" type="date" required /></label></div><label>Commercial effect<select name="commercialEffect"><option>NONE</option><option>TIMING</option><option>PROCUREMENT</option><option>PREPAYMENT</option><option>RETENTION</option><option>MOBILIZATION</option></select></label><label>Evidence-backed explanation<input name="explanation" placeholder="Required when an effect is selected" /></label><button disabled={!connection || busy}>Normalize record</button></form></section>
-    <section className="workbench-card"><span className="step-number">05</span><h2>Cost ledger</h2><div className="mini-ledger">{records.map((record) => <div key={record.id}><strong>{record.record_kind.replaceAll("_", " ")} · {record.currency} {record.amount}</strong><span>{record.reporting_period_start} → {record.reporting_period_end} · {record.commercial_effect}</span><small>{record.truth_type} · scope {record.controlled_object_id} · {record.id}</small></div>)}</div></section>
+  return <div className="workbench-grid cost-simple">
+    <section className="workbench-card full-width"><h2>Project</h2><form className="inline-form context-form" onSubmit={connect}><fieldset className="cost-project-fields" disabled={busy}><ProjectContextFields onConnectionChange={clearProject} /></fieldset><button disabled={busy}>Load cost controls</button><button type="button" className="secondary" disabled={!connection || busy} onClick={() => refresh()}>Refresh</button></form></section>
+    {budget ? <section className="cost-budget-strip full-width" aria-label="Approved budget"><span>Approved budget <strong>{budget.currency} {budget.current_authorized_budget}</strong></span><details><summary>Budget breakdown</summary><p>Original budget: {budget.approved_budget} · Approved changes: {budget.authorized_changes}</p><small>Approved version {budget.version_number} · {budget.measurement_basis} · {budget.context_id}</small></details></section> : null}
+    {policies.length > 0 ? <details className="cost-policy full-width"><summary>Cost analysis rules</summary><div className="mini-ledger">{policies.map((policy) => <div key={policy.policy_version}><strong>{policy.policy_version}</strong><span>Alignment ±{Number(policy.alignment_tolerance) * 100}% · forecast after {Number(policy.minimum_earned_ratio_for_forecast) * 100}% earned</span><small>{policy.rationale}</small></div>)}</div></details> : null}
+    <section className="workbench-card full-width"><h2>Add a cost record</h2><p className="planning-field-help">Enter the amount and reporting dates from your supporting evidence.</p><form key={connection?.projectId ?? "no-project"} className="stack-form compact" onSubmit={normalize}><fieldset disabled={!connection || busy}><label>Supporting evidence reference<input name="evidenceId" required aria-describedby="cost-evidence-help" /></label><small id="cost-evidence-help">Use the evidence item reference saved on the Evidence page.</small><div className="form-pair"><label>Cost type<select name="recordKind"><option value="ACTUAL">Actual cost</option><option value="ACCRUAL">Accrued cost</option><option value="COMMITMENT">Committed cost</option><option value="EARNED_VALUE">Earned value</option><option value="PHYSICAL_VALUE">Physical value</option><option value="BOQ_VALUE">BOQ value</option></select></label><label>Amount<input name="amount" type="number" min="0" step="any" required /></label></div><label>Currency<input name="currency" defaultValue={budget?.currency ?? "USD"} required /></label><div className="form-pair"><label>Period start<input name="periodStart" type="date" required /></label><label>Period end<input name="periodEnd" type="date" required /></label></div><details className="planning-optional"><summary>Additional cost details (optional)</summary><label>Measurement basis<input name="basis" defaultValue="COST_VALUE" required /></label><label>Commercial effect<select name="commercialEffect"><option>NONE</option><option>TIMING</option><option>PROCUREMENT</option><option>PREPAYMENT</option><option>RETENTION</option><option>MOBILIZATION</option></select></label><label>Evidence-backed explanation<input name="explanation" placeholder="Required when an effect is selected" /></label></details><button disabled={!connection || busy}>{busy ? "Saving…" : "Save cost record"}</button></fieldset></form>{!connection ? <p className="planning-field-help">Load a project above to add its cost records.</p> : null}</section>
+    {records.length > 0 ? <section className="workbench-card full-width"><h2>Saved cost records</h2><div className="mini-ledger">{records.map((record) => <div key={record.id}><strong>{record.record_kind.replaceAll("_", " ")} · {record.currency} {record.amount}</strong><span>{record.reporting_period_start} → {record.reporting_period_end} · {record.commercial_effect}</span><small>{record.truth_type} · scope {record.controlled_object_id} · {record.id}</small></div>)}</div></section> : null}
     {message ? <p className="workbench-message full-width" role="status">{message}</p> : null}
   </div>;
 }

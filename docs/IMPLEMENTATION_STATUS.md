@@ -1,6 +1,65 @@
 # Implementation Status
 
-Last updated: 2026-10-29
+Last updated: 2026-11-02
+
+## Cost control clutter removal (2026-11-02)
+
+Removed empty budget, policy and ledger cards. A real approved budget is shown as a compact strip;
+policy details are collapsed and only present when supplied, and saved cost records appear only
+when present. One full-width Add a cost record form replaces the oversized paired card layout.
+Technical measurement basis/commercial-effect inputs are under optional details. Visible labels,
+heading and save feedback use plain language. Existing evidence, scope, truth and backend role
+validation still apply; no amounts become verified or authorized through this UI change.
+Missing-budget responses no longer discard independently available cost records/policy, and failed
+reads remain visible. Changing project clears loaded records and locks entry until the next load.
+Two focused browser checks pass for compact empty states, simulated evidence-bound save payloads,
+partial data, project isolation, desktop/320px accessibility and reflow; screenshots were inspected.
+Web lint/typecheck/build, credential and whitespace checks pass. The running app returns 200 with
+the updated cost UI. The 63-test full browser run below preceded this additional cost-only change;
+the two focused checks cover it. No backend, schema, financial approval or delivery-gate change.
+
+## One-button work-package approval (2026-11-02)
+
+The scope stage now prepares normalization and package grouping automatically after a BOQ upload
+or explicit saved-source selection. Existing normalization/structure records are reused, preserving
+their immutable lineage. A readable package list leads to one Approve work packages button, without
+a mandatory typed review reason or a competing Next action. Source inspection remains available in
+an optional expander. Approval is never automatic: the human click submits ACCEPT_PROPOSAL with a
+literal record of the button action, through the existing role-checked endpoint, then opens planning.
+No invented review/completeness attestation, PM schedule authorization, or authority grant is added.
+Unreadable source failures keep approval disabled and offer retry or a replacement BOQ with plain
+guidance. Selecting another source clears previous downstream draft/calculation/review references.
+All 63 browser tests pass, including XLSX/PDF/procurement end-to-end approval journeys and new
+button-only scope, saved-source reuse, unreadable-file, desktop/mobile accessibility and reflow
+checks. Screenshots were visually inspected. All 334 Python tests plus four subtests pass, with
+the two PostgreSQL/live-provider gated tests skipped. Generated contracts, Python lint/format,
+web lint/typecheck/build and credential/whitespace checks pass. Browser verification used an
+isolated copy of current web sources, preserving the user's running app. Delivery-phase and
+human acceptance gates remain unchanged; one R10 workstream and Phases 12–14 remain.
+
+## Approved schedule reference page (2026-11-02)
+
+Simplified `/schedule` into an automatically loaded project reference: approved version, schedule
+data date, planned date range, chronological milestones, and searchable task dates/dependencies.
+Calendar and supplied float remain visible; missing values are not invented. The date range is
+labeled as a summary of approved tasks/milestones rather than a completion forecast. Source and
+version details remain inspectable. Missing approval links directly to review/approval; denied or
+failed reads are distinguished from a genuinely missing authorized schedule. Policy read failures
+do not discard the loaded plan. Project switches abort prior requests, clear search/results, and
+reject late responses. Policy administration is collapsed, explained in plain language, and still
+enforced by existing backend roles; no approval or authorized schedule mutation was added.
+
+Navigation calls this page Approved schedule and offers Next: Update progress; Evidence remains
+available as supporting intake rather than a mandatory stop on leaving this reference page.
+Current verification: the full 60-test browser suite passes; all five focused approved-schedule
+tests also pass after adding the policy-success regression. These cover project isolation,
+empty/error states, partial policy-read failure, denied and successful simulated policy writes,
+task search, desktop/320px axe accessibility and reflow. Desktop/mobile screenshots were visually
+reviewed. All 334 Python tests plus four subtests pass (two PostgreSQL/live-provider gated skips).
+Generated contracts, Python lint/format, web lint/typecheck/production build, credential scan and
+diff whitespace checks pass. Browser policy fixtures verify UI behavior without granting real
+authority; existing API role checks remain authoritative. No migration or persistent schema change.
+One R10 workstream and Phases 12–14 remain; human operator and external acceptance stay open.
 
 ## Supplied VAI sidebar logo (2026-10-29)
 

@@ -16,8 +16,9 @@ for (const width of [1280, 320]) {
       await expect(guide).toContainText(`${String(index + 1).padStart(2, "0")} / 12`);
       await expect(handoff).toContainText("moving to another page does not complete or approve this step");
       const next = handoff.locator(".workflow-next");
-      await expect(next).toHaveAttribute("href", journey[index + 1] ?? "/cases");
-      await expect(guide.locator(".workflow-next")).toHaveAttribute("href", journey[index + 1] ?? "/cases");
+      const destination = route === "/schedule" ? "/progress" : journey[index + 1] ?? "/cases";
+      await expect(next).toHaveAttribute("href", destination);
+      await expect(guide.locator(".workflow-next")).toHaveAttribute("href", destination);
       await assertReflow(page);
       if (route === "/setup") {
         await auditAccessibility(page, testInfo, `guided-setup-${width}`);
@@ -25,6 +26,11 @@ for (const width of [1280, 320]) {
         await page.screenshot({ path: `.test-tmp/workflow/setup-${width}.png`, fullPage: true });
       }
       await next.click();
+      if (route === "/schedule") {
+        await expect(page).toHaveURL(/\/progress$/);
+        // Evidence remains available as a supporting workbench, rather than a mandatory stop.
+        await page.goto("/evidence");
+      }
     }
     await expect(page).toHaveURL(/\/cases$/);
   });

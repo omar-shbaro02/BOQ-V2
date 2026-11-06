@@ -5,7 +5,7 @@ export const workflowGroups = [
   { label: "01 · Establish the plan", links: [
     { href: "/setup", label: "Projects", icon: "folder", guidance: "Create or select your project and review its control context." },
     { href: "/bootstrap", label: "BOQ to schedule", icon: "layers", guidance: "Prepare a schedule proposal from the BOQ. Review and authorize it separately in the advanced workbench." },
-    { href: "/schedule", label: "Schedule", icon: "calendar", guidance: "Check the effective authorized schedule, calendars and dependency logic before comparing updates." },
+    { href: "/schedule", label: "Approved schedule", icon: "calendar", guidance: "Check approved dates, milestones and task dependencies before reporting progress." },
   ] },
   { label: "02 · Collect control updates", links: [
     { href: "/evidence", label: "Evidence", icon: "file", guidance: "Retain source artifacts and reported claims. Record human verification separately." },
@@ -35,8 +35,8 @@ export function WorkflowNavigation({ pathname, position }: { pathname: string; p
   const assistant = pathname === "/bootstrap/schedule-assistant";
   const title = advanced ? "Schedule review & authorization" : assistant ? "Schedule-change proposal" : current?.label ?? "Command center";
   const guidance = advanced ? "Upload your BOQ, check its work items, plan working dates, then request approval." : assistant ? "Review and recalculate the proposed changes in Microsoft Project. This proposal does not change the authorized schedule." : current?.guidance ?? "Start with a project, then follow the guided workflow. Returning operators can jump directly to the decision queue.";
-  const destination = next ?? (current ? steps.find((step) => step.href === "/cases")! : steps[0]);
-  const action = !current ? "Start: Projects" : !next ? "Return to cases for decisions" : `Next: ${destination.label}`;
+  const destination = pathname === "/schedule" ? steps.find((step) => step.href === "/progress")! : next ?? (current ? steps.find((step) => step.href === "/cases")! : steps[0]);
+  const action = pathname === "/schedule" ? "Next: Update progress" : !current ? "Start: Projects" : !next ? "Return to cases for decisions" : `Next: ${destination.label}`;
 
   if (position === "top") return <section className="workflow-guide" aria-label="Workflow orientation">
     <div className="workflow-location"><span className="workflow-step">{current ? `${String(index + 1).padStart(2, "0")} / ${steps.length}` : "START HERE"}</span><div><span className="workflow-stage">{current?.stage ?? "Your project workflow"}</span><strong>{title}</strong></div></div>
